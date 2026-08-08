@@ -21,7 +21,7 @@
         "scene:update",
         "ui:render"
       ],
-      "workerUrl": "./controls/index.7c5be1fa.js"
+      "workerUrl": "./controls/index.df7e878e.js"
     },
     "video-player:playlist": {
       "watchEntityTypes": [
@@ -78,7 +78,7 @@
         "scene:read",
         "ui:render"
       ],
-      "workerUrl": "./search/index.afc51dbf.js"
+      "workerUrl": "./search/index.e84c8040.js"
     }
   },
   "assets": []
