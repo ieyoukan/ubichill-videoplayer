@@ -38,9 +38,12 @@ jobs:
       - name: Checkout gh-pages branch (worktree)
         run: |
           git fetch origin gh-pages --depth=1 2>/dev/null || true
-          git worktree add /tmp/gh-pages gh-pages 2>/dev/null || \
-            (git worktree add --orphan /tmp/gh-pages gh-pages-deploy && \
-             cd /tmp/gh-pages && git checkout --orphan gh-pages && git rm -rf . 2>/dev/null || true)
+          git worktree add /tmp/gh-pages gh-pages 2>/dev/null || {
+            git worktree add --detach /tmp/gh-pages
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            git rm -rf . 2>/dev/null || true
+          }
 
       - name: Sync dist to gh-pages
         run: |
