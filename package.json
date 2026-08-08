@@ -2,6 +2,7 @@
     "name": "@ubichill/video-player",
     "version": "2.0.0",
     "private": true,
+    "packageManager": "pnpm@10.33.2",
     "main": "src/index.ts",
     "types": "src/index.ts",
     "exports": {
