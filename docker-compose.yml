@@ -1,0 +1,28 @@
+services:
+  music-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: builder
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CORS_ORIGINS=*
+      - ROOT_PATH=/mods/video-player/api
+    volumes:
+      - ./backend/main.py:/app/main.py
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ubichill-network
+
+networks:
+  ubichill-network:
+    external: true
+
+name: ubichill-video-player

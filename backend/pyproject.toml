@@ -1,0 +1,19 @@
+[project]
+name = "yt-resolver"
+version = "0.1.0"
+description = "YouTube Resolver Microservice"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    # 実際の版はビルド時に最新へ更新される (Dockerfile の `uv pip install --upgrade yt-dlp`)。
+    # ここは下限の目安。YouTube 仕様変更に追従するため古いままにしない。
+    "yt-dlp>=2025.01.01",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.10.0",
+    "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

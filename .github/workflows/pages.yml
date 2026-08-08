@@ -1,0 +1,64 @@
+name: Publish mod to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'tsconfig.json'
+  workflow_dispatch:
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck and build mod
+        run: npm run build
+
+      - name: Checkout gh-pages branch (worktree)
+        run: |
+          git fetch origin gh-pages --depth=1 2>/dev/null || true
+          git worktree add /tmp/gh-pages gh-pages 2>/dev/null || \
+            (git worktree add --orphan /tmp/gh-pages gh-pages-deploy && \
+             cd /tmp/gh-pages && git checkout --orphan gh-pages && git rm -rf . 2>/dev/null || true)
+
+      - name: Sync dist to gh-pages
+        run: |
+          mkdir -p /tmp/gh-pages/video-player
+          cp -r dist/. /tmp/gh-pages/video-player/
+          echo "✅ Synced to gh-pages/video-player/"
+          ls -la /tmp/gh-pages/video-player/
+
+      - name: Commit and push to gh-pages
+        working-directory: /tmp/gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add video-player/
+          if git diff --cached --quiet; then
+            echo "No changes to mod bundle, skipping commit"
+          else
+            git commit -m "chore(mod): update bundle (${GITHUB_SHA::7})"
+            git push origin HEAD:gh-pages --force
+            echo "✅ Mod published to GitHub Pages"
+          fi

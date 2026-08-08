@@ -1,0 +1,42 @@
+services:
+  video-player-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-ubichill}/video-player-backend:${VERSION:-latest}
+    container_name: ubichill-video-player-backend-prod
+    restart: unless-stopped
+    ports:
+      - "${VIDEO_PLAYER_PORT:-8000}:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENV=production
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      replicas: 1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - ubichill-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  ubichill-network:
+    external: true
+
+name: ubichill-video-player-prod
