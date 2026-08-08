@@ -55,15 +55,21 @@ jobs:
           # index.json（レジストリ一覧）はサイトルートに置く。acquireMod/ubichill lock は
           # `<baseUrl>/<modId>/mod.json` を期待するため、index.json が video-player/ の
           # 内側にあると baseUrl 計算が二重ネスト（video-player/video-player/...）になる。
-          cp dist/index.json /tmp/gh-pages/index.json
-          echo "✅ Synced to gh-pages/index.json (registry root)"
+          # 古い ubichill CLI は index.json を出力しないため無ければスキップする。
+          if [ -f dist/index.json ]; then
+            cp dist/index.json /tmp/gh-pages/index.json
+            echo "✅ Synced to gh-pages/index.json (registry root)"
+          else
+            echo "⚠️  dist/index.json が無い（ubichill CLI が古い可能性）。スキップ"
+          fi
 
       - name: Commit and push to gh-pages
         working-directory: /tmp/gh-pages
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add video-player/ index.json
+          git add video-player/
+          [ -f index.json ] && git add index.json
           if git diff --cached --quiet; then
             echo "No changes to mod bundle, skipping commit"
           else
