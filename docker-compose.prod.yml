@@ -4,7 +4,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
-    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-ubichill}/video-player-backend:${VERSION:-latest}
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-p-nasimonan}/video-player-backend:${VERSION:-latest}
     container_name: ubichill-video-player-backend-prod
     restart: unless-stopped
     ports:
