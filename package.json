@@ -9,13 +9,13 @@
         ".": "./src/index.ts"
     },
     "peerDependencies": {
-        "ubichill": "^0.2.0"
+        "ubichill": "^0.3.0"
     },
     "devDependencies": {
         "typescript": "^5.9.0"
     },
     "scripts": {
         "typecheck": "tsc --noEmit",
-        "build": "npm run typecheck && npx ubichill build"
+        "build": "pnpm typecheck && pnpm exec ubichill build"
     }
 }
