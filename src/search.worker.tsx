@@ -20,7 +20,7 @@ import { formatTime } from './lib/playback';
 import { parseVideoId, thumbnailUrl } from './lib/youtube';
 import type { SearchResult, Track } from './types';
 
-const DEFAULT_API_BASE = '/mods/video-player/api';
+const DEFAULT_API_BASE = 'https://videoplayer.youkan.uk';
 
 // search はどの entity も watch しない (watchEntityTypes=[]) ため、
 // sync 系フィールドは target が解決できず flush が無音失敗する。

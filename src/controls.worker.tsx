@@ -43,7 +43,7 @@ import { computeCurrentTime, formatTime, isClockOverrun } from './lib/playback';
 import { extractVideoId, thumbnailUrl } from './lib/youtube';
 import type { LoopMode, Track } from './types';
 
-const DEFAULT_API_BASE = '/mods/video-player/api';
+const DEFAULT_API_BASE = 'https://videoplayer.youkan.uk';
 
 const state = Ubi.state.define({
     // ── 共有 + 永続。runtime 専用は editable:false で Inspector から除外 ──
