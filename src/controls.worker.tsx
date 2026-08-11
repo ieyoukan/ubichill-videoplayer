@@ -47,9 +47,6 @@ const DEFAULT_API_BASE = 'https://videoplayer.youkan.uk';
 
 const state = Ubi.state.define({
     // ── 共有 + 永続。runtime 専用は editable:false で Inspector から除外 ──
-    // isPlaying は「作成時に自動再生するか」の初期値として編集可。true なら
-    // インスタンス作成時に先頭から再生が始まる（vp:media:loaded のクロック補正で
-    // stale な playEpoch をリセットして 0 から再生する）。
     isPlaying: Ubi.state.sync(false, {
         label: '作成時に自動再生',
         help: 'オンにすると、インスタンス作成時にプレイリスト先頭から再生を開始します',
@@ -66,13 +63,14 @@ const state = Ubi.state.define({
     currentTrack: null as Track | null,
     currentIndex: 0,
     totalTracks: 0,
-    // ロード中フラグ: vp:media:load 発行から vp:media:loaded 受信まで true。
-    // シークバーをシマーアニメ化し、操作をブロックする。
     isLoading: false,
+    // ClockSystem が 100ms ごとにインクリメントする進行バー時計用カウンタ。
+    // ControlsView がこれを読むことで、Date.now() 経過による再描画が自動追跡される。
+    // React の useEffect + setInterval → setState と等価なパターン。
+    _tick: 0,
 });
 
 // ── ヘルパー ────────────────────────────────────────
-// 共有時計の現在位置。計算ロジックは lib/playback に集約（state を渡すだけ）。
 function currentTime(): number {
     return computeCurrentTime(state.local);
 }
@@ -85,11 +83,6 @@ function buildTrackUrl(track: Track): string {
 
 // ── screen / playlist へのエイリアス (events.ts に集約) ──
 
-/**
- * 共有時計の現在状態に合わせてローカル <video> を同期する。
- * isPlaying / baselineTime / playEpoch のどれかが変わったとき、または vp:media:loaded 時に呼ぶ。
- * Live モードは seek 不可なので play/pause のみ。
- */
 let syncScheduled = false;
 function scheduleSyncVideo(): void {
     if (syncScheduled) return;
@@ -107,7 +100,6 @@ function scheduleSyncVideo(): void {
 
 // ── UI アクション ──────────────────────────────────
 const onSeek = (time: number): void => {
-    // baselineTime を seek 先に固定。isPlaying=true なら clock を restart。
     state.batch(() => {
         state.local.baselineTime = time;
         if (state.local.isPlaying) state.local.playEpoch = Date.now();
@@ -115,14 +107,11 @@ const onSeek = (time: number): void => {
 };
 const onPlayToggle = (): void => {
     if (state.local.isPlaying) {
-        // pause: 現在位置を baselineTime に固定して時計を止める
         state.batch(() => {
             state.local.baselineTime = currentTime();
             state.local.isPlaying = false;
         });
     } else {
-        // play: clock を起動。終端 (or 超過) なら 0 に巻き戻してから再生
-        // (= ended 後の手動 play / 末尾までシークしてから play などに対応)
         state.batch(() => {
             const dur = state.local.duration;
             if (dur > 0 && state.local.baselineTime >= dur - 0.5) {
@@ -149,27 +138,20 @@ const onVolumeChange = (v: number): void => {
     state.local.myVolume = v;
 };
 
-// ── state 変化 → ローカル video 同期 + 再描画 ─────────
-// 共有時計を構成する 3 つは同じ syncVideo に集約 (microtask で dedupe)
-state.onChange('isPlaying', () => {
-    scheduleSyncVideo();
-    render();
-});
+// ── 副作用のみ。描画は state 読み取りによる自動追跡に任せる ──
+state.onChange('isPlaying', scheduleSyncVideo);
 state.onChange('baselineTime', scheduleSyncVideo);
 state.onChange('playEpoch', scheduleSyncVideo);
 state.onChange('myVolume', (v) => {
     VPEvents.emit('vp:media:volume', { volume: v }, VPTarget.screen);
-    render();
 });
-state.onChange('loop', render);
-state.onChange('shuffle', render);
-state.onChange('duration', render);
-state.onChange('isLoading', render);
 
-// ── レンダリング ──────────────────────────────────
-function render(): void {
+// ── レンダリング（自動追跡: 読んだキーが変わると自動再描画） ─────
+// sandbox.worker.ts が export default を検出して自動で Ubi.ui.render(..., "default") する。
+// _tick を読むことで、ClockSystem による 100ms 間隔の進行バー更新も自動追跡に乗る。
+export default function ControlsView() {
+    const _t = state.local._tick;
     const track = state.local.currentTrack;
-    // サムネ: 検索由来は thumbnail を持つ。URL/ID 直書きのトラックは id から導出する。
     const thumb = track ? track.thumbnail || thumbnailUrl(track.id) : '';
     const ct = currentTime();
     const progress = state.local.duration > 0 ? (ct / state.local.duration) * 100 : 0;
@@ -181,167 +163,160 @@ function render(): void {
     const LoopIconComp = state.local.loop === 'one' ? RepeatOneIcon : RepeatIcon;
     const isPlaying = state.local.isPlaying;
     const empty = state.local.totalTracks === 0;
-    // シークバーの背景: 読み込み中は shimmer グラデを動かす、それ以外は進捗バー。
     const seekBackground = isLoading
         ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(0,122,255,0.5) 50%, rgba(255,255,255,0.05) 100%)'
         : `linear-gradient(to right, #007aff ${progress}%, rgba(255,255,255,0.2) ${progress}%)`;
     const seekDisabled = isLoading || state.local.duration <= 0 || isLive;
 
-    Ubi.ui.render(
-        () => (
-            <div
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                inset: '0',
+                background: '#1a1a1a',
+                borderRadius: '12px',
+                padding: '8px 12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                userSelect: 'none',
+                pointerEvents: 'auto',
+            }}
+        >
+            <input
+                type="range"
+                min="0"
+                max={String(state.local.duration > 0 ? state.local.duration : 100)}
+                step="0.1"
+                value={String(isLoading ? 0 : ct.toFixed(1))}
+                disabled={seekDisabled}
                 style={{
-                    position: 'absolute',
-                    inset: '0',
-                    background: '#1a1a1a',
-                    borderRadius: '12px',
-                    padding: '8px 12px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    fontFamily: 'system-ui, -apple-system, sans-serif',
-                    userSelect: 'none',
-                    pointerEvents: 'auto',
+                    width: '100%',
+                    height: '4px',
+                    marginBottom: '8px',
+                    display: 'block',
+                    cursor: seekDisabled ? 'default' : 'pointer',
+                    accentColor: '#007aff',
+                    appearance: 'none',
+                    background: seekBackground,
+                    backgroundSize: isLoading ? '200% 100%' : '100% 100%',
+                    animation: isLoading ? 'ubichill-vp-loading 1.5s linear infinite' : 'none',
+                    borderRadius: '2px',
+                    outline: 'none',
                 }}
-            >
-                <input
-                    type="range"
-                    min="0"
-                    max={String(state.local.duration > 0 ? state.local.duration : 100)}
-                    step="0.1"
-                    value={String(isLoading ? 0 : ct.toFixed(1))}
-                    disabled={seekDisabled}
-                    style={{
-                        width: '100%',
-                        height: '4px',
-                        marginBottom: '8px',
-                        display: 'block',
-                        cursor: seekDisabled ? 'default' : 'pointer',
-                        accentColor: '#007aff',
-                        appearance: 'none',
-                        background: seekBackground,
-                        backgroundSize: isLoading ? '200% 100%' : '100% 100%',
-                        animation: isLoading ? 'ubichill-vp-loading 1.5s linear infinite' : 'none',
-                        borderRadius: '2px',
-                        outline: 'none',
-                    }}
-                    onUbiInput={(val: unknown) => onSeek(Number.parseFloat(String(val)))}
-                />
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                    {/* 左: トラック情報 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '0' }}>
-                        {thumb && (
-                            <img
-                                src={thumb}
-                                alt=""
-                                decoding="async"
-                                width="36"
-                                height="36"
-                                style={{
-                                    width: '36px',
-                                    height: '36px',
-                                    borderRadius: '4px',
-                                    objectFit: 'cover',
-                                    flexShrink: '0',
-                                }}
-                            />
-                        )}
-                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: '0' }}>
-                            <div
-                                style={{
-                                    fontSize: '12px',
-                                    fontWeight: '600',
-                                    color: '#fff',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                }}
-                            >
-                                {track ? track.title || track.id : '---'}
-                            </div>
-                            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)' }}>
-                                {formatTime(ct)} /{' '}
-                                {state.local.duration > 0
-                                    ? formatTime(state.local.duration)
-                                    : isLive
-                                      ? 'LIVE'
-                                      : '--:--'}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 中央: 再生 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <CtrlBtn disabled={empty} onClick={onPrev}>
-                            <SkipPrevIcon size={18} />
-                        </CtrlBtn>
-                        <button
-                            type="button"
-                            disabled={empty}
+                onUbiInput={(val: unknown) => onSeek(Number.parseFloat(String(val)))}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1', minWidth: '0' }}>
+                    {thumb && (
+                        <img
+                            src={thumb}
+                            alt=""
+                            decoding="async"
+                            width="36"
+                            height="36"
                             style={{
-                                background: '#007aff',
-                                border: 'none',
-                                color: '#fff',
-                                cursor: empty ? 'not-allowed' : 'pointer',
                                 width: '36px',
                                 height: '36px',
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                boxShadow: '0 2px 8px rgba(0,122,255,0.3)',
-                                opacity: empty ? '0.5' : '1',
+                                borderRadius: '4px',
+                                objectFit: 'cover',
+                                flexShrink: '0',
                             }}
-                            onUbiClick={onPlayToggle}
-                        >
-                            {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
-                        </button>
-                        <CtrlBtn disabled={empty} onClick={onNext}>
-                            <SkipNextIcon size={18} />
-                        </CtrlBtn>
-                    </div>
-
-                    {/* 右: shuffle / loop / volume */}
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            flex: '1',
-                            justifyContent: 'flex-end',
-                        }}
-                    >
-                        <CtrlBtn active={state.local.shuffle} onClick={onShuffleToggle}>
-                            <ShuffleIcon size={16} />
-                        </CtrlBtn>
-                        <CtrlBtn active={state.local.loop !== 'none'} onClick={onLoopCycle}>
-                            <LoopIconComp size={16} />
-                        </CtrlBtn>
-                        <span style={{ color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center' }}>
-                            <VolumeIcon size={16} />
-                        </span>
-                        <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={String(volume)}
-                            style={{
-                                width: '60px',
-                                height: '3px',
-                                background: 'rgba(255,255,255,0.2)',
-                                borderRadius: '2px',
-                                outline: 'none',
-                                cursor: 'pointer',
-                                appearance: 'none',
-                                accentColor: '#007aff',
-                            }}
-                            onUbiInput={(val: unknown) => onVolumeChange(Number.parseFloat(String(val)))}
                         />
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: '0' }}>
+                        <div
+                            style={{
+                                fontSize: '12px',
+                                fontWeight: '600',
+                                color: '#fff',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                            }}
+                        >
+                            {track ? track.title || track.id : '---'}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)' }}>
+                            {formatTime(ct)} /{' '}
+                            {state.local.duration > 0
+                                ? formatTime(state.local.duration)
+                                : isLive
+                                  ? 'LIVE'
+                                  : '--:--'}
+                        </div>
                     </div>
                 </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CtrlBtn disabled={empty} onClick={onPrev}>
+                        <SkipPrevIcon size={18} />
+                    </CtrlBtn>
+                    <button
+                        type="button"
+                        disabled={empty}
+                        style={{
+                            background: '#007aff',
+                            border: 'none',
+                            color: '#fff',
+                            cursor: empty ? 'not-allowed' : 'pointer',
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 2px 8px rgba(0,122,255,0.3)',
+                            opacity: empty ? '0.5' : '1',
+                        }}
+                        onUbiClick={onPlayToggle}
+                    >
+                        {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
+                    </button>
+                    <CtrlBtn disabled={empty} onClick={onNext}>
+                        <SkipNextIcon size={18} />
+                    </CtrlBtn>
+                </div>
+
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flex: '1',
+                        justifyContent: 'flex-end',
+                    }}
+                >
+                    <CtrlBtn active={state.local.shuffle} onClick={onShuffleToggle}>
+                        <ShuffleIcon size={16} />
+                    </CtrlBtn>
+                    <CtrlBtn active={state.local.loop !== 'none'} onClick={onLoopCycle}>
+                        <LoopIconComp size={16} />
+                    </CtrlBtn>
+                    <span style={{ color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center' }}>
+                        <VolumeIcon size={16} />
+                    </span>
+                    <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={String(volume)}
+                        style={{
+                            width: '60px',
+                            height: '3px',
+                            background: 'rgba(255,255,255,0.2)',
+                            borderRadius: '2px',
+                            outline: 'none',
+                            cursor: 'pointer',
+                            appearance: 'none',
+                            accentColor: '#007aff',
+                        }}
+                        onUbiInput={(val: unknown) => onVolumeChange(Number.parseFloat(String(val)))}
+                    />
+                </div>
             </div>
-        ),
-        'controls',
+        </div>
     );
 }
 
@@ -384,8 +359,6 @@ function CtrlBtn({
 }
 
 VPEvents.on('vp:track:current', ({ track, index, total }) => {
-    // 一度ローカル変数に取り出して TS の narrowing を効かせる (state.local.* の再アクセスは
-    // narrowing が剥がれて null 可能性が残る)
     const prev = state.local.currentTrack;
     const prevId = prev?.id ?? null;
     const nextId = track?.id ?? null;
@@ -393,57 +366,45 @@ VPEvents.on('vp:track:current', ({ track, index, total }) => {
     const needLoad = prevId !== nextId;
     const changed = !isFirstLoad && needLoad;
 
-    state.local.currentTrack = track;
-    state.local.currentIndex = index;
-    state.local.totalTracks = total;
+    state.batch(() => {
+        state.local.currentTrack = track;
+        state.local.currentIndex = index;
+        state.local.totalTracks = total;
 
-    // トラックが変わった場合のみ共有時計をゼロから始める
-    // (ただしローカル初回ロード時はサーバーの最新状態を受け取っただけなのでリセットしない)
-    if (changed) {
-        state.batch(() => {
+        if (changed) {
             state.local.baselineTime = 0;
             state.local.playEpoch = Date.now();
             state.local.duration = 0;
-        });
-    }
+        }
 
-    // 初回ロードか、トラックが変わった場合は load。シークバーは isLoading=true で
-    // シマー表示にし、ユーザー操作をブロック。vp:media:loaded で false に戻る。
+        if (needLoad && track) {
+            state.local.isLoading = true;
+        }
+    });
+
     if (needLoad && track) {
-        state.local.isLoading = true;
         VPEvents.emit('vp:media:load', { url: buildTrackUrl(track), mode: track.mode }, VPTarget.screen);
     }
-    render();
 });
 
 VPEvents.on('vp:media:loaded', ({ duration }) => {
     state.batch(() => {
         if (duration > 0) state.local.duration = duration;
-        state.local.isLoading = false; // ローディング解除 → シークバーが通常表示に戻る
+        state.local.isLoading = false;
 
-        // 不正な共有時計の補正:
-        // 新規作成インスタンスは playEpoch が stale (例: 0) のまま isPlaying=true で
-        // 始まることがある。その場合 baselineTime + 経過 が duration を遥かに超え、
-        // シーク先が終端を突き抜けて「再生されない」状態になる。
-        // duration が判明したこのタイミングで、生の経過位置が duration を超えていたら
-        // 先頭から再生し直す（進行中インスタンスへの正当な join は範囲内なので影響なし）。
         if (isClockOverrun(state.local)) {
             state.local.baselineTime = 0;
             state.local.playEpoch = Date.now();
         }
     });
-    // 共有時計の現在位置にローカル <video> を合わせる (再生中ならそのまま、停止中なら baselineTime)
     scheduleSyncVideo();
 });
 
 VPEvents.on('vp:media:ended', () => {
-    // 次トラックを playlist にリクエスト
     VPEvents.emit('vp:track:next', { loop: state.local.loop, shuffle: state.local.shuffle }, VPTarget.playlist);
 });
 
 VPEvents.on('vp:playback:stop', () => {
-    // playlist が末尾到達 (loop='none') を通知してきた → 0 に巻き戻して停止
-    // (baselineTime を duration に固定すると次の Play で seekbar が max のまま再起動するため)
     state.batch(() => {
         state.local.baselineTime = 0;
         state.local.playEpoch = Date.now();
@@ -452,8 +413,6 @@ VPEvents.on('vp:playback:stop', () => {
 });
 
 VPEvents.on('vp:track:replay', () => {
-    // playlist から同トラック replay 要求 (loop='one' or 単一トラック loop='all')。
-    // 共有時計を 0 から再起動し、isPlaying は維持 (= 自動継続再生)。
     state.batch(() => {
         state.local.baselineTime = 0;
         state.local.playEpoch = Date.now();
@@ -461,21 +420,19 @@ VPEvents.on('vp:track:replay', () => {
     });
 });
 
-// ── 進行バー時計のための tick ────────────────────────
-// 進行バーが体感ジャギにならない程度の頻度で再描画 (≒ 10fps)。
-// VNode 生成のみ・ネットワーク 0 なので CPU は誤差。
+// ── 進行バー時計（React の useEffect + setInterval → setState と等価） ──
+// _tick をインクリメントするだけ。ControlsView が _tick を読んでいるため、
+// 自動追跡が発火して再描画される。Ubi.ui.render() を手動で呼ぶ必要はない。
 const accumulator = { ms: 0 };
 const ClockSystem: System = (_e: Entity[], dt: number) => {
     if (!state.local.isPlaying) return;
     accumulator.ms += dt;
     if (accumulator.ms >= 100) {
         accumulator.ms = 0;
-        render();
+        state.local._tick += 1;
     }
 };
 Ubi.registerSystem(ClockSystem);
 
-// 初期化
-render();
 // 起動時に screen へ初期音量を通知 (起動順依存吸収)
 queueMicrotask(() => VPEvents.emit('vp:media:volume', { volume: state.local.myVolume }, VPTarget.screen));

@@ -9,7 +9,7 @@
         ".": "./src/index.ts"
     },
     "peerDependencies": {
-        "ubichill": "^0.3.0"
+        "ubichill": "^0.4.0"
     },
     "devDependencies": {
         "typescript": "^5.9.0"
