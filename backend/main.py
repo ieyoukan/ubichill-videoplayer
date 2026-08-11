@@ -1,8 +1,11 @@
 import asyncio
 import ipaddress
+import logging
 import re
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional, Tuple
 from urllib.parse import urljoin, quote, urlparse
 
@@ -12,13 +15,31 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 import yt_dlp
 import httpx
 
+# ── ロギング設定 ───────────────────────────────────
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("yt-resolver")
+
 # ROOT_PATH環境変数を取得（Kubernetes Ingressでのプレフィックス対応）
 root_path = os.getenv("ROOT_PATH", "")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """アプリケーションライフサイクル。シャットダウン時にスレッドプールを安全に終了する。"""
+    yield
+    logger.info("Shutting down yt-dlp thread pool...")
+    _ytdlp_executor.shutdown(wait=True, cancel_futures=True)
+    logger.info("yt-dlp thread pool shut down")
+
 
 app = FastAPI(
     title="Ubichill Video Player API",
     version="1.0.0",
-    root_path=root_path
+    root_path=root_path,
+    lifespan=lifespan,
 )
 
 # CORS設定（環境変数から取得、デフォルトは開発環境用）
@@ -44,10 +65,10 @@ class YTDLPLogger:
         pass
 
     def warning(self, msg):
-        pass
+        logger.warning("yt-dlp: %s", msg)
 
     def error(self, msg):
-        print(f"yt-dlp error: {msg}")
+        logger.error("yt-dlp: %s", msg)
 
 
 def _base_ydl_opts() -> Dict[str, Any]:
@@ -62,10 +83,12 @@ def _base_ydl_opts() -> Dict[str, Any]:
     - YTDLP_PLAYER_CLIENT        : 'ios,web' 等。extractor の player_client を上書き
                                    （cookies 無しで通る client を試したいとき）
     """
+    socket_timeout = int(os.getenv("YTDLP_SOCKET_TIMEOUT", "30"))
     opts: Dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "logger": YTDLPLogger(),
+        "socket_timeout": socket_timeout,
     }
     cookiefile = os.getenv("YTDLP_COOKIES_FILE")
     if cookiefile:
@@ -77,6 +100,93 @@ def _base_ydl_opts() -> Dict[str, Any]:
     if player_client:
         opts["extractor_args"] = {"youtube": {"player_client": player_client.split(",")}}
     return opts
+
+
+# ── yt-dlp 同時実行制御 ─────────────────────────
+# Cloudflare 502 の主因: すべての uvicorn worker が yt-dlp の重い呼び出しで
+# ブロックされ、リクエストを受け付けられなくなる。Semaphore で同時実行数を
+# 制限し、枠を超えたリクエストは速やかに 503 を返して Cloudflare のタイム
+# アウトを回避する。
+_YTDLP_MAX_CONCURRENT = int(os.getenv("YTDLP_MAX_CONCURRENT", "3"))
+_ytdlp_semaphore = asyncio.Semaphore(_YTDLP_MAX_CONCURRENT)
+# yt-dlp 専用スレッドプール。asyncio.to_thread はデフォルトプールを使うため
+# 他のブロッキング処理と競合する。分離することで yt-dlp が詰まっても他の
+# エンドポイント（サムネイル/proxy）は影響を受けない。
+_ytdlp_executor = ThreadPoolExecutor(
+    max_workers=_YTDLP_MAX_CONCURRENT,
+    thread_name_prefix="ytdlp",
+)
+# yt-dlp 全体のタイムアウト（秒）。socket_timeout とは別に、
+# extract_info 全体がこの時間を超えたら強制中断する。
+_YTDLP_TASK_TIMEOUT = int(os.getenv("YTDLP_TASK_TIMEOUT", "60"))
+
+
+class YTDLPError(Exception):
+    """yt-dlp 呼び出し失敗（タイムアウト / bot 判定 / ネットワークエラー等）。"""
+
+    def __init__(self, message: str, status_code: int = 502, kind: str = "YTDLP_ERROR"):
+        super().__init__(message)
+        self.status_code = status_code
+        self.kind = kind
+
+
+async def _run_ytdlp(func, *args, **kwargs):
+    """yt-dlp の重い同期呼び出しを Semaphore + ThreadPool + Timeout で安全に実行する。
+
+    3 段階の防御:
+    1. Semaphore — 同時実行数超過ならここで待機（先行リクエストが終わるのを待つだけ）
+    2. asyncio.wait_for — 全体タイムアウトで永久ブロック防止
+    3. socket_timeout — yt-dlp 内の個別ネットワーク操作にもタイムアウト
+
+    失敗時は YTDLPError（Cloudflare に適切なエラーコードを返すため HTTPException に変換される）。
+    """
+    sem_acquired = False
+    try:
+        # Semaphore の獲得にもタイムアウトを設定（詰まってるなら素早く 503 を返す）
+        sem_acquired = await asyncio.wait_for(
+            _ytdlp_semaphore.acquire(),
+            timeout=float(os.getenv("YTDLP_SEMAPHORE_TIMEOUT", "15")),
+        )
+    except asyncio.TimeoutError:
+        raise YTDLPError(
+            "Server is overloaded, please try again later",
+            status_code=503,
+            kind="OVERLOADED",
+        )
+
+    loop = asyncio.get_running_loop()
+    task_start = time.monotonic()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(_ytdlp_executor, func, *args, **kwargs),
+            timeout=_YTDLP_TASK_TIMEOUT,
+        )
+        elapsed = time.monotonic() - task_start
+        logger.info("yt-dlp call completed in %.1fs (func=%s)", elapsed, getattr(func, "__name__", func))
+        return result
+    except asyncio.TimeoutError:
+        elapsed = time.monotonic() - task_start
+        logger.error("yt-dlp call timed out after %.1fs (func=%s)", elapsed, getattr(func, "__name__", func))
+        raise YTDLPError(
+            "YouTube request timed out, please try again",
+            status_code=504,
+            kind="TIMEOUT",
+        )
+    except Exception as e:
+        elapsed = time.monotonic() - task_start
+        msg = str(e)
+        logger.error("yt-dlp call failed after %.1fs: %s (func=%s)", elapsed, msg[:200], getattr(func, "__name__", func))
+        # bot 判定 / IP ブロックの典型的メッセージを判別
+        if "sign in" in msg.lower() or "bot" in msg.lower():
+            raise YTDLPError(
+                "YouTube is blocking this server (bot detection). Try setting YTDLP_COOKIES_FILE.",
+                status_code=502,
+                kind="BOT_DETECTED",
+            )
+        raise YTDLPError(msg, status_code=502, kind="YTDLP_ERROR")
+    finally:
+        if sem_acquired:
+            _ytdlp_semaphore.release()
 
 
 @app.get("/")
@@ -123,11 +233,13 @@ def _yt_search(q: str, limit: int) -> list:
 async def search_tracks(q: str, limit: int = 10):
     """YouTube検索"""
     try:
-        tracks = await asyncio.to_thread(_yt_search, q, limit)
+        tracks = await _run_ytdlp(_yt_search, q, limit)
         return tracks
+    except YTDLPError as e:
+        raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except Exception as e:
-        print(f"Search error: {e}")
-        return []
+        logger.exception("Unexpected search error")
+        raise HTTPException(status_code=500, detail={"error": "INTERNAL", "message": f"Search error: {str(e)[:200]}"})
 
 
 def _yt_info(video_id: str) -> dict:
@@ -141,7 +253,7 @@ async def get_video_info(video_id: str, request: Request):
     """動画情報を取得"""
     _validate_video_id(video_id)
     try:
-        info = await asyncio.to_thread(_yt_info, video_id)
+        info = await _run_ytdlp(_yt_info, video_id)
         base_url = f"{request.url.scheme}://{request.url.netloc}"
         return {
             "id": info.get("id"),
@@ -151,17 +263,26 @@ async def get_video_info(video_id: str, request: Request):
             "author": info.get("uploader", "Unknown"),
             "streamUrl": f"{base_url}/api/stream/video/{video_id}",
         }
+    except YTDLPError as e:
+        raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
+    except HTTPException:
+        raise
     except Exception as e:
         error_msg = str(e)
         if "Requested format is not available" in error_msg:
             raise HTTPException(
-                status_code=400, detail=f"Video format not supported for ID: {video_id}"
+                status_code=400,
+                detail={"error": "FORMAT_NOT_SUPPORTED", "message": f"Video format not supported for ID: {video_id}"},
             )
         elif "Video unavailable" in error_msg:
-            raise HTTPException(status_code=404, detail=f"Video not found: {video_id}")
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "VIDEO_UNAVAILABLE", "message": f"Video not found: {video_id}"},
+            )
         else:
             raise HTTPException(
-                status_code=500, detail=f"Failed to get video info: {error_msg}"
+                status_code=500,
+                detail={"error": "INTERNAL", "message": f"Failed to get video info: {error_msg[:200]}"},
             )
 
 
@@ -396,9 +517,11 @@ async def stream_live(video_id: str, request: Request):
     """ライブストリーム配信（HLS最適化）"""
     _validate_video_id(video_id)
     try:
-        stream_url = await asyncio.to_thread(_yt_live_url, video_id)
+        stream_url = await _run_ytdlp(_yt_live_url, video_id)
         return await proxy_url(stream_url, request)
 
+    except YTDLPError as e:
+        raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except HTTPException:
         raise
     except Exception as e:
@@ -449,12 +572,16 @@ _SEGMENT_BYTES = 4 * 1024 * 1024  # 4MB
 
 
 async def _resolve_video_url(video_id: str) -> str:
-    """解決済み URL をキャッシュ付きで返す。"""
+    """解決済み URL をキャッシュ付きで返す。
+
+    yt-dlp 呼び出しはキャッシュミス時のみ発生（動画あたり最大 1 時間に 1 回）。
+    そのため Semaphore を通過する影響は軽微。
+    """
     now = time.time()
     cached = _video_url_cache.get(video_id)
     if cached and cached[1] > now:
         return cached[0]
-    url = await asyncio.to_thread(_yt_video_url, video_id)
+    url = await _run_ytdlp(_yt_video_url, video_id)
     # 肥大防止: 期限切れを掃除
     if len(_video_url_cache) > 256:
         for k in [k for k, (_, exp) in _video_url_cache.items() if exp <= now]:
@@ -540,6 +667,9 @@ async def stream_video(video_id: str, request: Request):
             headers=res_headers,
         )
 
+    except YTDLPError as e:
+        # yt-dlp 呼び出し自体が失敗（タイムアウト / overloading / bot 判定）
+        raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except HTTPException:
         raise
     except Exception as e:
