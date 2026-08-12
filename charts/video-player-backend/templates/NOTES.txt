@@ -1,0 +1,27 @@
+Ubichill video player backend をデプロイしました。
+
+{{- if .Values.ingress.enabled }}
+Ingress 経由のアクセス先:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}{{ range .paths }}{{ .path }}{{ end }}
+{{- end }}
+{{- else }}
+クラスタ内からのアクセス:
+  http://{{ include "video-player-backend.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+{{- end }}
+
+ヘルスチェック:
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "video-player-backend.name" . }}
+
+{{- if .Values.autoscaling.enabled }}
+HPA が有効です（{{ .Values.autoscaling.minReplicas }}〜{{ .Values.autoscaling.maxReplicas }} レプリカ）。
+{{- else }}
+レプリカ数: {{ .Values.replicaCount }}
+{{- end }}
+
+{{- if .Values.cookies.enabled }}
+yt-dlp cookies が Secret「{{ .Values.cookies.secretName }}」からマウントされています。
+{{- else }}
+注意: yt-dlp cookies が未設定です。YouTube の bot 判定（502）が発生する場合は
+  `cookies.enabled=true` を設定して cookies.txt を Secret で提供してください。
+{{- end }}

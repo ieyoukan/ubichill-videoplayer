@@ -3,6 +3,7 @@ import ipaddress
 import logging
 import re
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -21,6 +22,52 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("yt-resolver")
+
+
+class TTLCache:
+    """シンプルなインメモリ TTL キャッシュ（スレッドセーフ）。
+
+    検索結果 / 動画情報 / 解決済みストリーム URL をキャッシュして、
+    yt-dlp への呼び出し回数を削減する。Redis 導入前の第一段階として
+    プロセス内 dict で実装。複数レプリカで共有する場合は Redis に差し替える。
+    """
+
+    def __init__(self, max_size: int = 512):
+        self._store: Dict[str, Tuple[Any, float]] = {}
+        self._max_size = max_size
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Optional[Any]:
+        now = time.monotonic()
+        with self._lock:
+            item = self._store.get(key)
+            if item is None:
+                return None
+            value, expires = item
+            if expires <= now:
+                del self._store[key]
+                return None
+            return value
+
+    def set(self, key: str, value: Any, ttl: float) -> None:
+        now = time.monotonic()
+        with self._lock:
+            # 肥大防止: 上限を超えたら期限切れを掃除し、それでも満杯なら最古を追い出す（FIFO）
+            if len(self._store) >= self._max_size:
+                for k in [k for k, (_, exp) in self._store.items() if exp <= now]:
+                    del self._store[k]
+                if len(self._store) >= self._max_size:
+                    oldest = next(iter(self._store))
+                    del self._store[oldest]
+            self._store[key] = (value, now + ttl)
+
+    def delete(self, key: str) -> None:
+        with self._lock:
+            self._store.pop(key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
 
 # ROOT_PATH環境変数を取得（Kubernetes Ingressでのプレフィックス対応）
 root_path = os.getenv("ROOT_PATH", "")
@@ -189,6 +236,23 @@ async def _run_ytdlp(func, *args, **kwargs):
             _ytdlp_semaphore.release()
 
 
+# ── キャッシュ設定 ───────────────────────────────
+# yt-dlp 呼び出しは高コスト（ネットワーク + リソース）なので、結果を TTL 付きで
+# インメモリにキャッシュする。複数レプリカで共有する場合は Redis に差し替える。
+_CACHE_MAX_SIZE = int(os.getenv("CACHE_MAX_SIZE", "512"))
+_CACHE_SEARCH_TTL = int(os.getenv("CACHE_SEARCH_TTL", "300"))  # 5分
+_CACHE_INFO_TTL = int(os.getenv("CACHE_INFO_TTL", "3600"))    # 1時間
+_CACHE_LIVE_TTL = int(os.getenv("CACHE_LIVE_TTL", "30"))      # 30秒
+
+_search_cache = TTLCache(max_size=_CACHE_MAX_SIZE)
+_info_cache = TTLCache(max_size=_CACHE_MAX_SIZE)
+_live_cache = TTLCache(max_size=_CACHE_MAX_SIZE)
+# 解決済み googlevideo URL のキャッシュ（/video 用）。署名付き URL は数時間有効なので
+# TTL は 1 時間。キャッシュミス時にのみ yt-dlp を回す。
+_video_url_cache = TTLCache(max_size=_CACHE_MAX_SIZE)
+_VIDEO_URL_TTL = 60 * 60  # 1 hour
+
+
 @app.get("/")
 async def health_check():
     return {"message": "Ubichill Music Streaming API", "status": "healthy"}
@@ -231,9 +295,17 @@ def _yt_search(q: str, limit: int) -> list:
 
 @app.get("/search")
 async def search_tracks(q: str, limit: int = 10):
-    """YouTube検索"""
+    """YouTube検索（TTL キャッシュ付き）"""
+    q = (q or "").strip()
+    if not q:
+        return []
+    cache_key = f"search:{q.lower()}:{limit}"
+    cached = _search_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         tracks = await _run_ytdlp(_yt_search, q, limit)
+        _search_cache.set(cache_key, tracks, _CACHE_SEARCH_TTL)
         return tracks
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
@@ -250,12 +322,16 @@ def _yt_info(video_id: str) -> dict:
 
 @app.get("/info/{video_id}")
 async def get_video_info(video_id: str, request: Request):
-    """動画情報を取得"""
+    """動画情報を取得（TTL キャッシュ付き）"""
     _validate_video_id(video_id)
+    cache_key = f"info:{video_id}"
+    cached = _info_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         info = await _run_ytdlp(_yt_info, video_id)
         base_url = f"{request.url.scheme}://{request.url.netloc}"
-        return {
+        result = {
             "id": info.get("id"),
             "title": info.get("title", "Unknown"),
             "thumbnail": info.get("thumbnail") or f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
@@ -263,6 +339,8 @@ async def get_video_info(video_id: str, request: Request):
             "author": info.get("uploader", "Unknown"),
             "streamUrl": f"{base_url}/api/stream/video/{video_id}",
         }
+        _info_cache.set(cache_key, result, _CACHE_INFO_TTL)
+        return result
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except HTTPException:
@@ -514,10 +592,15 @@ def _yt_live_url(video_id: str) -> str:
 
 @app.get("/live/{video_id}")
 async def stream_live(video_id: str, request: Request):
-    """ライブストリーム配信（HLS最適化）"""
+    """ライブストリーム配信（HLS最適化・TTL キャッシュ付き）"""
     _validate_video_id(video_id)
+    cache_key = f"live:{video_id}"
+    cached = _live_cache.get(cache_key)
+    if cached is not None:
+        return await proxy_url(cached, request)
     try:
         stream_url = await _run_ytdlp(_yt_live_url, video_id)
+        _live_cache.set(cache_key, stream_url, _CACHE_LIVE_TTL)
         return await proxy_url(stream_url, request)
 
     except YTDLPError as e:
@@ -559,12 +642,6 @@ def _yt_video_url(video_id: str) -> str:
     return stream_url
 
 
-# 解決済み googlevideo URL の TTL キャッシュ。
-# /video は 1 レスポンスを小さく頭打ちする (短いセグメント化) ため、1 本の動画で
-# range リクエストが何度も来る。毎回 yt-dlp を回すと遅く YouTube にも叩かれるので、
-# 署名付き URL を再利用する。googlevideo URL は数時間有効なので TTL は短めの 1 時間。
-_video_url_cache: Dict[str, Tuple[str, float]] = {}
-_VIDEO_URL_TTL = 60 * 60  # 1 hour
 # 1 レスポンスの最大バイト数。これを超える range 要求はこのサイズに丸めて返し、
 # ブラウザに続きを別リクエストで取りに来させる (= HTTP レベルの短いセグメント)。
 # 1 本の長い 206 ストリームが転送途中で QUIC アイドルタイムアウトするのを防ぐ。
@@ -577,16 +654,11 @@ async def _resolve_video_url(video_id: str) -> str:
     yt-dlp 呼び出しはキャッシュミス時のみ発生（動画あたり最大 1 時間に 1 回）。
     そのため Semaphore を通過する影響は軽微。
     """
-    now = time.time()
     cached = _video_url_cache.get(video_id)
-    if cached and cached[1] > now:
-        return cached[0]
+    if cached is not None:
+        return cached
     url = await _run_ytdlp(_yt_video_url, video_id)
-    # 肥大防止: 期限切れを掃除
-    if len(_video_url_cache) > 256:
-        for k in [k for k, (_, exp) in _video_url_cache.items() if exp <= now]:
-            _video_url_cache.pop(k, None)
-    _video_url_cache[video_id] = (url, now + _VIDEO_URL_TTL)
+    _video_url_cache.set(video_id, url, _VIDEO_URL_TTL)
     return url
 
 
@@ -644,7 +716,7 @@ async def stream_video(video_id: str, request: Request):
 
         # 署名切れ等で弾かれたらキャッシュを捨てて、次リクエストで再解決させる
         if upstream.status_code in (403, 410):
-            _video_url_cache.pop(video_id, None)
+            _video_url_cache.delete(video_id)
 
         async def _iter():
             try:
