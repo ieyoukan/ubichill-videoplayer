@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       ubichill:
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^0.5.0
+        version: 0.5.0
     devDependencies:
       typescript:
         specifier: ^5.9.0
@@ -184,8 +184,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  ubichill@0.4.0:
-    resolution: {integrity: sha512-G09GMOcKd1+RrpGsGuIzIbiCcaXWJZX/sseeSzKOQWS+zvKWfsUMaZNY6LWoSaDwts7ZodLY2aLLuHDiClYziA==}
+  ubichill@0.5.0:
+    resolution: {integrity: sha512-+TmS4bNHSIGcKkU0UahT8XbO0rTlqIJV6tVQYAiDn18u9cIIMjbHeUn/7ZvYpzvfiKZEFkRf+wKGvrDEMBJBCw==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -305,7 +305,7 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  ubichill@0.4.0:
+  ubichill@0.5.0:
     dependencies:
       esbuild: 0.28.1
       yaml: 2.9.0
