@@ -24,7 +24,7 @@ Ubi.media.setVisible(true, TARGET);
 
 // ── controls からのコマンドを Ubi.media に流す ───────
 VPEvents.on('vp:media:load', ({ url, mode }) => {
-    Ubi.media.load(url, TARGET, mode === 'live' ? 'hls' : 'auto');
+    Ubi.media.load(url, TARGET, mode === 'live' ? 'hls' : 'auto', 'video');
 });
 VPEvents.on('vp:media:play', () => Ubi.media.play(TARGET));
 VPEvents.on('vp:media:pause', () => Ubi.media.pause(TARGET));
