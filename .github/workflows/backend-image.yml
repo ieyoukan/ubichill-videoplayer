@@ -17,16 +17,23 @@ env:
 
 permissions:
   packages: write
+  contents: write  # git tag の push に必要
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # 既存タグの確認・タグ打ちのために完全履歴を取得
+          fetch-depth: 0
 
-      - name: Extract short SHA
+      - name: Extract version info
         id: versions
-        run: echo "short-sha=$(echo "${{ github.sha }}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "short-sha=$(echo "${{ github.sha }}" | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          # backend のセマンティックバージョンは pyproject.toml の version を唯一のソースとする
+          echo "version=$(grep -m1 '^version' backend/pyproject.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v4
         with:
@@ -47,6 +54,25 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${{ steps.versions.outputs.short-sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.versions.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+
+      # pyproject.toml の version を元に git tag (vX.Y.Z) を自動で打つ。
+      # 同じバージョンのタグが既に存在する場合は何もしない（backend の変更の
+      # たびに version が変わらないケースに対応）。
+      - name: Create and push git tag
+        env:
+          VERSION: ${{ steps.versions.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists, skipping"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "${TAG}"
+            git push origin "${TAG}"
+            echo "Created and pushed tag ${TAG}"
+          fi
