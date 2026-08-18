@@ -645,7 +645,11 @@ def _yt_video_url(video_id: str) -> str:
 # 1 レスポンスの最大バイト数。これを超える range 要求はこのサイズに丸めて返し、
 # ブラウザに続きを別リクエストで取りに来させる (= HTTP レベルの短いセグメント)。
 # 1 本の長い 206 ストリームが転送途中で QUIC アイドルタイムアウトするのを防ぐ。
-_SEGMENT_BYTES = 4 * 1024 * 1024  # 4MB
+#
+# 注意: MP4 の moov（メタデータ）は先頭にあり、4MB だと高解像度・長尺動画で
+# moov サイズが超過して <video> が「Format error」になる。実測で 3.5MB 超の moov
+# があったため、余裕を持って 16MB に引き上げた。
+_SEGMENT_BYTES = 16 * 1024 * 1024  # 16MB
 
 
 async def _resolve_video_url(video_id: str) -> str:
@@ -689,6 +693,8 @@ async def stream_video(video_id: str, request: Request):
       リクエストで取りに来るので、長い 206 ストリームが転送途中に QUIC アイドル
       タイムアウトで切れる問題を防ぐ (HLS の短いセグメントと同等の効果)。
     - range ごとに yt-dlp を回さないよう、解決済み URL を TTL キャッシュする。
+    - 上流が 403/410 を返した場合は署名 URL の失効とみなし、キャッシュを破棄して
+      yt-dlp で再解決し、そのリクエスト内で 1 回だけ再試行する。
     - `client.send(stream=True)` で body をメモリに溜めず逐次転送する。
     """
     _validate_video_id(video_id)
@@ -712,11 +718,39 @@ async def stream_video(video_id: str, request: Request):
         # 各ホップを _safe_get 経由で allowlist 検証 → 302 で内部 IP に飛ばされない
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
         client = httpx.AsyncClient(follow_redirects=False, timeout=timeout, http2=False)
-        upstream = await _safe_get(client, stream_url, headers, stream=True)
+        upstream = None
+        try:
+            # 403/410 のときだけ URL を再解決して 1 回だけ再試行する。
+            # 最初の失敗レスポンスは再試行前に閉じ、接続をリークさせない。
+            for attempt in range(2):
+                upstream = await _safe_get(client, stream_url, headers, stream=True)
+                if upstream.status_code not in (403, 410):
+                    break
 
-        # 署名切れ等で弾かれたらキャッシュを捨てて、次リクエストで再解決させる
-        if upstream.status_code in (403, 410):
-            _video_url_cache.delete(video_id)
+                _video_url_cache.delete(video_id)
+                if attempt == 1:
+                    break
+
+                rejected_status = upstream.status_code
+                await upstream.aclose()
+                upstream = None
+                logger.warning(
+                    "Video upstream returned %d; refreshing signed URL and retrying once "
+                    "(video_id=%s)",
+                    rejected_status,
+                    video_id,
+                )
+                stream_url = await _resolve_video_url(video_id)
+                if not _is_safe_proxy_url(stream_url):
+                    raise HTTPException(status_code=403, detail="Stream URL is not allowed")
+        except Exception:
+            if upstream is not None:
+                await upstream.aclose()
+            await client.aclose()
+            raise
+
+        # loop は必ずレスポンスを 1 つ設定して終了する。
+        assert upstream is not None
 
         async def _iter():
             try:
