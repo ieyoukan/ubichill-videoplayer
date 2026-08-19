@@ -1,3 +1,5 @@
+FROM denoland/deno:bin-2.9.4 AS deno
+
 FROM python:3.12-slim-bookworm AS base
 
 RUN apt-get update && apt-get install -y \
@@ -6,6 +8,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=deno /deno /usr/local/bin/deno
+
+# yt-dlp の YouTube JavaScript Challenge 解決に使用する。
+# Deno は yt-dlp で既定有効なため、追加の --js-runtimes 指定は不要。
+ENV DENO_NO_UPDATE_CHECK=1 \
+    DENO_NO_PROMPT=1
+RUN deno --version
 
 # ── Builder ──────────────────────────────────────────────────
 FROM base AS builder
@@ -16,11 +25,12 @@ RUN uv venv .venv
 ENV PATH="/app/.venv/bin:$PATH"
 RUN uv pip install -r pyproject.toml
 
-# yt-dlp は YouTube 仕様変更で頻繁に壊れるため、毎ビルドで最新へ更新する。
+# yt-dlp は YouTube 仕様変更で頻繁に壊れるため、EJS を含む default extras ごと
+# 毎ビルドで最新へ更新する。
 # YTDLP_REFRESH に毎回変わる値 (CI では commit sha) を渡すとこのレイヤのキャッシュが
 # 無効化され、確実に最新の yt-dlp を取り込む。他の依存はキャッシュを効かせたまま。
 ARG YTDLP_REFRESH=dev
-RUN uv pip install --upgrade yt-dlp
+RUN uv pip install --upgrade "yt-dlp[default]"
 
 # ── Production ───────────────────────────────────────────────
 FROM base AS production
