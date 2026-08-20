@@ -42,6 +42,12 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            {{- if .Values.potProvider.enabled }}
+            - name: YTDLP_POT_PROVIDER_URL
+              value: http://127.0.0.1:{{ .Values.potProvider.port }}
+            - name: YTDLP_PLAYER_CLIENT
+              value: {{ .Values.potProvider.playerClient | quote }}
+            {{- end }}
             {{- if .Values.cookies.enabled }}
             - name: YTDLP_COOKIES_FILE
               value: /app/cookies/{{ .Values.cookies.key }}
@@ -61,6 +67,27 @@ spec:
               mountPath: /app/cookies
               readOnly: true
           {{- end }}
+        {{- if .Values.potProvider.enabled }}
+        - name: pot-provider
+          image: "{{ .Values.potProvider.image.repository }}:{{ .Values.potProvider.image.tag }}"
+          imagePullPolicy: {{ .Values.potProvider.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: pot-provider
+              containerPort: {{ .Values.potProvider.port }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: pot-provider
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.potProvider.resources | nindent 12 }}
+        {{- end }}
       {{- if .Values.cookies.enabled }}
       volumes:
         - name: cookies

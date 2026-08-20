@@ -10,6 +10,7 @@ dependencies = [
     # JavaScript Challenge 解決に必要な yt-dlp-ejs も導入する。
     # ここは下限の目安。YouTube 仕様変更に追従するため古いままにしない。
     "yt-dlp[default]>=2026.07.04",
+    "bgutil-ytdlp-pot-provider>=1.3.1",
     "python-multipart>=0.0.20",
     "pydantic>=2.10.0",
     "httpx>=0.28.0",

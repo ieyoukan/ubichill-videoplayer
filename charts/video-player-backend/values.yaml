@@ -77,11 +77,14 @@ env:
   ROOT_PATH: ""
   CORS_ORIGINS: "*"
   LOG_LEVEL: "info"
+  HTTPX_LOG_LEVEL: "warning"
   # yt-dlp 同時実行制御
   YTDLP_MAX_CONCURRENT: "3"
   YTDLP_SOCKET_TIMEOUT: "30"
   YTDLP_TASK_TIMEOUT: "60"
   YTDLP_SEMAPHORE_TIMEOUT: "15"
+  # URL 解決と動画取得を同じ IPv4 出口に揃える
+  UPSTREAM_SOURCE_ADDRESS: "0.0.0.0"
   # キャッシュ TTL（秒）
   CACHE_MAX_SIZE: "512"
   CACHE_SEARCH_TTL: "300"
@@ -95,6 +98,24 @@ cookies:
   enabled: false
   secretName: ""
   key: "cookies.txt"
+
+# YouTube GVS の 403 回避に使用する PO Token Provider sidecar。
+# backend と同じ Pod network を使うため、トークン生成と動画取得の出口IPが一致する。
+potProvider:
+  enabled: true
+  image:
+    repository: brainicism/bgutil-ytdlp-pot-provider
+    tag: "1.3.1-deno"
+    pullPolicy: IfNotPresent
+  port: 4416
+  playerClient: "mweb"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
 
 # 追加の環境変数（Secret からの読み込みなど）
 extraEnv: []

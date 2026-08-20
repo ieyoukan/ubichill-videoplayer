@@ -10,6 +10,11 @@ services:
       - PYTHONUNBUFFERED=1
       - CORS_ORIGINS=*
       - ROOT_PATH=/mods/video-player/api
+      - UPSTREAM_SOURCE_ADDRESS=0.0.0.0
+      - YTDLP_POT_PROVIDER_URL=http://pot-provider:4416
+      - YTDLP_PLAYER_CLIENT=mweb
+    depends_on:
+      - pot-provider
     volumes:
       - ./backend/main.py:/app/main.py
     command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -18,6 +23,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - ubichill-network
+
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:1.3.1-deno
+    restart: unless-stopped
     networks:
       - ubichill-network
 

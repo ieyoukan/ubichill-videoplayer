@@ -7,7 +7,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, TypedDict
 from urllib.parse import urljoin, quote, urlparse
 
 from fastapi import FastAPI, HTTPException, Response, Request
@@ -22,6 +22,14 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("yt-resolver")
+# Google Video の署名・PO Token・出口IPを含む完全URLを INFO ログへ残さない。
+logging.getLogger("httpx").setLevel(
+    os.getenv("HTTPX_LOG_LEVEL", "WARNING").upper()
+)
+
+# yt-dlp による URL 解決と httpx による動画取得を同じ IP family に固定する。
+# 0.0.0.0 は OS が選ぶ IPv4 アドレスを使用する指定。
+_UPSTREAM_SOURCE_ADDRESS = os.getenv("UPSTREAM_SOURCE_ADDRESS", "0.0.0.0")
 
 
 class TTLCache:
@@ -129,6 +137,8 @@ def _base_ydl_opts() -> Dict[str, Any]:
     - YTDLP_COOKIES_FROM_BROWSER : 'chrome' 等（ブラウザがある環境向け。コンテナでは不可）
     - YTDLP_PLAYER_CLIENT        : 'ios,web' 等。extractor の player_client を上書き
                                    （cookies 無しで通る client を試したいとき）
+    - YTDLP_POT_PROVIDER_URL     : BgUtils PO Token Provider の HTTP URL
+    - UPSTREAM_SOURCE_ADDRESS    : yt-dlp / httpx 共通の送信元。既定は 0.0.0.0 (IPv4)
     """
     socket_timeout = int(os.getenv("YTDLP_SOCKET_TIMEOUT", "30"))
     opts: Dict[str, Any] = {
@@ -136,6 +146,7 @@ def _base_ydl_opts() -> Dict[str, Any]:
         "no_warnings": True,
         "logger": YTDLPLogger(),
         "socket_timeout": socket_timeout,
+        "source_address": _UPSTREAM_SOURCE_ADDRESS,
     }
     cookiefile = os.getenv("YTDLP_COOKIES_FILE")
     if cookiefile:
@@ -143,9 +154,15 @@ def _base_ydl_opts() -> Dict[str, Any]:
     from_browser = os.getenv("YTDLP_COOKIES_FROM_BROWSER")
     if from_browser:
         opts["cookiesfrombrowser"] = (from_browser,)
+    extractor_args: Dict[str, Dict[str, list[str]]] = {}
     player_client = os.getenv("YTDLP_PLAYER_CLIENT")
     if player_client:
-        opts["extractor_args"] = {"youtube": {"player_client": player_client.split(",")}}
+        extractor_args["youtube"] = {"player_client": player_client.split(",")}
+    pot_provider_url = os.getenv("YTDLP_POT_PROVIDER_URL")
+    if pot_provider_url:
+        extractor_args["youtubepot-bgutilhttp"] = {"base_url": [pot_provider_url]}
+    if extractor_args:
+        opts["extractor_args"] = extractor_args
     return opts
 
 
@@ -627,7 +644,13 @@ async def stream_live(video_id: str, request: Request):
             )
 
 
-def _yt_video_url(video_id: str) -> str:
+class VideoStreamInfo(TypedDict):
+    url: str
+    http_headers: Dict[str, str]
+    chunk_size: int
+
+
+def _yt_video_url(video_id: str) -> VideoStreamInfo:
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
     stream_opts: Dict[str, Any] = {
         **_base_ydl_opts(),
@@ -639,7 +662,22 @@ def _yt_video_url(video_id: str) -> str:
     stream_url = info.get("url")
     if not stream_url:
         raise ValueError("Stream URL not found")
-    return stream_url
+    raw_headers = info.get("http_headers") or {}
+    http_headers = {
+        str(key): str(value)
+        for key, value in raw_headers.items()
+        if value is not None
+    }
+    raw_chunk_size = (info.get("downloader_options") or {}).get("http_chunk_size")
+    try:
+        chunk_size = int(raw_chunk_size) if raw_chunk_size else _SEGMENT_BYTES
+    except (TypeError, ValueError):
+        chunk_size = _SEGMENT_BYTES
+    return {
+        "url": stream_url,
+        "http_headers": http_headers,
+        "chunk_size": max(1, min(chunk_size, _SEGMENT_BYTES)),
+    }
 
 
 # 1 レスポンスの最大バイト数。これを超える range 要求はこのサイズに丸めて返し、
@@ -652,8 +690,8 @@ def _yt_video_url(video_id: str) -> str:
 _SEGMENT_BYTES = 16 * 1024 * 1024  # 16MB
 
 
-async def _resolve_video_url(video_id: str) -> str:
-    """解決済み URL をキャッシュ付きで返す。
+async def _resolve_video_url(video_id: str) -> VideoStreamInfo:
+    """解決済み URL とその取得条件をキャッシュ付きで返す。
 
     yt-dlp 呼び出しはキャッシュミス時のみ発生（動画あたり最大 1 時間に 1 回）。
     そのため Semaphore を通過する影響は軽微。
@@ -666,7 +704,10 @@ async def _resolve_video_url(video_id: str) -> str:
     return url
 
 
-def _capped_range(range_header: Optional[str]) -> str:
+def _capped_range(
+    range_header: Optional[str],
+    max_bytes: int = _SEGMENT_BYTES,
+) -> str:
     """受信 Range を解析し、1 レスポンスを _SEGMENT_BYTES 以下に丸めた Range 文字列を返す。"""
     start = 0
     req_end: Optional[int] = None
@@ -675,9 +716,39 @@ def _capped_range(range_header: Optional[str]) -> str:
         if m:
             start = int(m.group(1))
             req_end = int(m.group(2)) if m.group(2) else None
-    cap_end = start + _SEGMENT_BYTES - 1
+    safe_max_bytes = max(1, min(max_bytes, _SEGMENT_BYTES))
+    cap_end = start + safe_max_bytes - 1
     end = cap_end if req_end is None else min(req_end, cap_end)
     return f"bytes={start}-{end}"
+
+
+_VIDEO_REQUEST_HEADER_ALLOWLIST = {
+    "accept",
+    "accept-language",
+    "origin",
+    "referer",
+    "sec-fetch-mode",
+    "user-agent",
+}
+
+
+def _video_request_headers(
+    stream_info: VideoStreamInfo,
+    range_header: Optional[str],
+) -> Dict[str, str]:
+    """yt-dlp が URL と共に返した安全な取得ヘッダーを Range 付きで返す。"""
+    headers = {
+        key: value
+        for key, value in stream_info["http_headers"].items()
+        if key.lower() in _VIDEO_REQUEST_HEADER_ALLOWLIST
+    }
+    lower_names = {key.lower() for key in headers}
+    if "user-agent" not in lower_names:
+        headers["User-Agent"] = "Mozilla/5.0"
+    if "accept" not in lower_names:
+        headers["Accept"] = "*/*"
+    headers["Range"] = _capped_range(range_header, stream_info["chunk_size"])
+    return headers
 
 
 @app.get("/video/{video_id}")
@@ -699,25 +770,25 @@ async def stream_video(video_id: str, request: Request):
     """
     _validate_video_id(video_id)
     try:
-        stream_url = await _resolve_video_url(video_id)
+        stream_info = await _resolve_video_url(video_id)
+        stream_url = stream_info["url"]
         # SSRF defense in depth: yt-dlp 出力も allowlist 検証する
         # (yt-dlp が予期せぬ URL を返すケースをカバー)
         if not _is_safe_proxy_url(stream_url):
             raise HTTPException(status_code=403, detail="Stream URL is not allowed")
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "*/*",
-            "Referer": "https://www.youtube.com/",
-            "Origin": "https://www.youtube.com",
-            # 常に範囲指定して 1 レスポンスを頭打ちする (短いセグメント化)
-            "Range": _capped_range(request.headers.get("range")),
-        }
+        headers = _video_request_headers(stream_info, request.headers.get("range"))
 
         # follow_redirects=False + 自前ホップ検証 (SSRF 対策)
         # 各ホップを _safe_get 経由で allowlist 検証 → 302 で内部 IP に飛ばされない
         timeout = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
-        client = httpx.AsyncClient(follow_redirects=False, timeout=timeout, http2=False)
+        transport = httpx.AsyncHTTPTransport(local_address=_UPSTREAM_SOURCE_ADDRESS)
+        client = httpx.AsyncClient(
+            follow_redirects=False,
+            timeout=timeout,
+            http2=False,
+            transport=transport,
+        )
         upstream = None
         try:
             # 403/410 のときだけ URL を再解決して 1 回だけ再試行する。
@@ -740,9 +811,14 @@ async def stream_video(video_id: str, request: Request):
                     rejected_status,
                     video_id,
                 )
-                stream_url = await _resolve_video_url(video_id)
+                stream_info = await _resolve_video_url(video_id)
+                stream_url = stream_info["url"]
                 if not _is_safe_proxy_url(stream_url):
                     raise HTTPException(status_code=403, detail="Stream URL is not allowed")
+                headers = _video_request_headers(
+                    stream_info,
+                    request.headers.get("range"),
+                )
         except Exception:
             if upstream is not None:
                 await upstream.aclose()

@@ -30,7 +30,9 @@ RUN uv pip install -r pyproject.toml
 # YTDLP_REFRESH に毎回変わる値 (CI では commit sha) を渡すとこのレイヤのキャッシュが
 # 無効化され、確実に最新の yt-dlp を取り込む。他の依存はキャッシュを効かせたまま。
 ARG YTDLP_REFRESH=dev
-RUN uv pip install --upgrade "yt-dlp[default]"
+RUN uv pip install --upgrade --prerelease allow \
+    "yt-dlp[default]" \
+    bgutil-ytdlp-pot-provider
 
 # ── Production ───────────────────────────────────────────────
 FROM base AS production
