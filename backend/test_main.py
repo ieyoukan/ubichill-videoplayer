@@ -3,7 +3,8 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, Request
 
-import main
+from app.routers import video as video_router
+from app.ytdlp_client import YTDLPError, _base_ydl_opts
 
 
 class FakeUpstream:
@@ -34,7 +35,7 @@ def stream_info(
     user_agent: str = "yt-dlp-agent",
     chunk_size: int = 10 * 1024 * 1024,
     available_at: float = 0,
-) -> main.VideoStreamInfo:
+) -> video_router.VideoStreamInfo:
     return {
         "url": url,
         "http_headers": {
@@ -79,13 +80,13 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch.object(main, "_resolve_video_url", resolve),
-            patch.object(main, "_safe_get", AsyncMock(return_value=success)),
-            patch.object(main.httpx, "AsyncClient", return_value=client),
-            patch.object(main.time, "time", return_value=100.9),
-            patch.object(main.asyncio, "sleep", AsyncMock()) as sleep,
+            patch.object(video_router, "_resolve_video_url", resolve),
+            patch.object(video_router, "_safe_get", AsyncMock(return_value=success)),
+            patch.object(video_router.httpx, "AsyncClient", return_value=client),
+            patch.object(video_router.time, "time", return_value=100.9),
+            patch.object(video_router.asyncio, "sleep", AsyncMock()) as sleep,
         ):
-            response = await main.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_video("w3vt4U13QYM", make_request())
 
         sleep.assert_awaited_once_with(5)
         self.assertEqual(response.status_code, 206)
@@ -110,12 +111,12 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
         safe_get = AsyncMock(side_effect=[rejected, success])
 
         with (
-            patch.object(main, "_resolve_video_url", resolve),
-            patch.object(main, "_safe_get", safe_get),
-            patch.object(main._video_url_cache, "delete") as cache_delete,
-            patch.object(main.httpx, "AsyncClient", return_value=client),
+            patch.object(video_router, "_resolve_video_url", resolve),
+            patch.object(video_router, "_safe_get", safe_get),
+            patch.object(video_router._video_url_cache, "delete") as cache_delete,
+            patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
-            response = await main.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_video("w3vt4U13QYM", make_request())
 
         self.assertEqual(response.status_code, 206)
         self.assertEqual(await consume(response), b"video")
@@ -143,12 +144,12 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         with (
-            patch.object(main, "_resolve_video_url", resolve),
-            patch.object(main, "_safe_get", AsyncMock(side_effect=[first, second])) as safe_get,
-            patch.object(main._video_url_cache, "delete") as cache_delete,
-            patch.object(main.httpx, "AsyncClient", return_value=client),
+            patch.object(video_router, "_resolve_video_url", resolve),
+            patch.object(video_router, "_safe_get", AsyncMock(side_effect=[first, second])) as safe_get,
+            patch.object(video_router._video_url_cache, "delete") as cache_delete,
+            patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
-            response = await main.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_video("w3vt4U13QYM", make_request())
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(await consume(response), b"")
@@ -165,18 +166,18 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
         resolve = AsyncMock(
             side_effect=[
                 stream_info("https://old.googlevideo.com/videoplayback"),
-                main.YTDLPError("blocked", kind="BOT_DETECTED"),
+                YTDLPError("blocked", kind="BOT_DETECTED"),
             ]
         )
 
         with (
-            patch.object(main, "_resolve_video_url", resolve),
-            patch.object(main, "_safe_get", AsyncMock(return_value=rejected)),
-            patch.object(main._video_url_cache, "delete"),
-            patch.object(main.httpx, "AsyncClient", return_value=client),
+            patch.object(video_router, "_resolve_video_url", resolve),
+            patch.object(video_router, "_safe_get", AsyncMock(return_value=rejected)),
+            patch.object(video_router._video_url_cache, "delete"),
+            patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
             with self.assertRaises(HTTPException) as raised:
-                await main.stream_video("w3vt4U13QYM", make_request())
+                await video_router.stream_video("w3vt4U13QYM", make_request())
 
         self.assertEqual(raised.exception.status_code, 502)
         self.assertEqual(rejected.close_count, 1)
@@ -185,14 +186,16 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
 
 class VideoRequestConditionTests(unittest.TestCase):
     def test_configures_ipv4_and_pot_provider(self):
+        import app.ytdlp_client as ytdlp_client
+
         with patch.dict(
-            main.os.environ,
+            ytdlp_client.os.environ,
             {
                 "YTDLP_PLAYER_CLIENT": "mweb",
                 "YTDLP_POT_PROVIDER_URL": "http://127.0.0.1:4416",
             },
         ):
-            options = main._base_ydl_opts()
+            options = _base_ydl_opts()
 
         self.assertEqual(options["source_address"], "0.0.0.0")
         self.assertEqual(
@@ -213,7 +216,7 @@ class VideoRequestConditionTests(unittest.TestCase):
         info["http_headers"]["Host"] = "malicious.example"
         info["http_headers"]["Cookie"] = "not-forwarded"
 
-        headers = main._video_request_headers(info, "bytes=0-")
+        headers = video_router._video_request_headers(info, "bytes=0-")
 
         self.assertEqual(headers["User-Agent"], "extractor-agent")
         self.assertEqual(headers["Range"], "bytes=0-10485759")
@@ -226,7 +229,7 @@ class VideoRequestConditionTests(unittest.TestCase):
             chunk_size=32 * 1024 * 1024,
         )
 
-        headers = main._video_request_headers(info, "bytes=100-")
+        headers = video_router._video_request_headers(info, "bytes=100-")
 
         self.assertEqual(headers["Range"], "bytes=100-16777315")
 
