@@ -648,6 +648,7 @@ class VideoStreamInfo(TypedDict):
     url: str
     http_headers: Dict[str, str]
     chunk_size: int
+    available_at: float
 
 
 def _yt_video_url(video_id: str) -> VideoStreamInfo:
@@ -677,6 +678,7 @@ def _yt_video_url(video_id: str) -> VideoStreamInfo:
         "url": stream_url,
         "http_headers": http_headers,
         "chunk_size": max(1, min(chunk_size, _SEGMENT_BYTES)),
+        "available_at": float(info.get("available_at") or 0),
     }
 
 
@@ -751,6 +753,25 @@ def _video_request_headers(
     return headers
 
 
+async def _wait_for_stream_availability(
+    stream_info: VideoStreamInfo,
+    video_id: str,
+) -> None:
+    """YouTube が指定した CDN 利用可能時刻まで非同期で待機する。"""
+    wait_seconds = max(
+        0.0,
+        stream_info.get("available_at", 0) - int(time.time()),
+    )
+    if wait_seconds <= 0:
+        return
+    logger.info(
+        "Waiting %.1fs before accessing video CDN (video_id=%s)",
+        wait_seconds,
+        video_id,
+    )
+    await asyncio.sleep(wait_seconds)
+
+
 @app.get("/video/{video_id}")
 async def stream_video(video_id: str, request: Request):
     """通常動画配信（短いセグメント化プロキシ方式）
@@ -794,6 +815,7 @@ async def stream_video(video_id: str, request: Request):
             # 403/410 のときだけ URL を再解決して 1 回だけ再試行する。
             # 最初の失敗レスポンスは再試行前に閉じ、接続をリークさせない。
             for attempt in range(2):
+                await _wait_for_stream_availability(stream_info, video_id)
                 upstream = await _safe_get(client, stream_url, headers, stream=True)
                 if upstream.status_code not in (403, 410):
                     break

@@ -33,6 +33,7 @@ def stream_info(
     url: str,
     user_agent: str = "yt-dlp-agent",
     chunk_size: int = 10 * 1024 * 1024,
+    available_at: float = 0,
 ) -> main.VideoStreamInfo:
     return {
         "url": url,
@@ -43,6 +44,7 @@ def stream_info(
             "Sec-Fetch-Mode": "navigate",
         },
         "chunk_size": chunk_size,
+        "available_at": available_at,
     }
 
 
@@ -66,6 +68,29 @@ async def consume(response) -> bytes:
 
 
 class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_waits_asynchronously_until_stream_is_available(self):
+        success = FakeUpstream(206, b"video")
+        client = FakeClient()
+        resolve = AsyncMock(
+            return_value=stream_info(
+                "https://video.googlevideo.com/videoplayback",
+                available_at=105,
+            )
+        )
+
+        with (
+            patch.object(main, "_resolve_video_url", resolve),
+            patch.object(main, "_safe_get", AsyncMock(return_value=success)),
+            patch.object(main.httpx, "AsyncClient", return_value=client),
+            patch.object(main.time, "time", return_value=100.9),
+            patch.object(main.asyncio, "sleep", AsyncMock()) as sleep,
+        ):
+            response = await main.stream_video("w3vt4U13QYM", make_request())
+
+        sleep.assert_awaited_once_with(5)
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(await consume(response), b"video")
+
     async def test_refreshes_url_and_retries_after_upstream_403(self):
         rejected = FakeUpstream(403)
         success = FakeUpstream(206, b"video")
