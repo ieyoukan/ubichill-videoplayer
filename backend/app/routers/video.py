@@ -25,6 +25,7 @@ router = APIRouter()
 # 解決済み googlevideo URL のキャッシュ（/video 用）。署名付き URL は数時間有効なので
 # TTL は 1 時間。キャッシュミス時にのみ yt-dlp を回す。
 _video_url_cache = TTLCache(max_size=CACHE_MAX_SIZE)
+_audio_url_cache = TTLCache(max_size=CACHE_MAX_SIZE)
 _VIDEO_URL_TTL = 60 * 60  # 1 hour
 
 # 1 レスポンスの最大バイト数。これを超える range 要求はこのサイズに丸めて返し、
@@ -35,6 +36,7 @@ _VIDEO_URL_TTL = 60 * 60  # 1 hour
 # moov サイズが超過して <video> が「Format error」になる。実測で 3.5MB 超の moov
 # があったため、余裕を持って 16MB に引き上げた。
 _SEGMENT_BYTES = 16 * 1024 * 1024  # 16MB
+_INITIAL_SEGMENT_BYTES = 64 * 1024 * 1024  # 長尺 MP4 の先頭メタデータ用
 
 _VIDEO_REQUEST_HEADER_ALLOWLIST = {
     "accept",
@@ -84,6 +86,42 @@ def _yt_video_url(video_id: str) -> VideoStreamInfo:
     }
 
 
+def _yt_audio_url(video_id: str) -> VideoStreamInfo:
+    """通常動画の音声のみのストリーム URL を解決する。
+
+    サーバーで再エンコードは行わず、YouTube が用意した audio-only
+    フォーマットをそのままプロキシする。
+    """
+    youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+    stream_opts = {
+        **_base_ydl_opts(),
+        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+        "youtube_include_dash_manifest": False,
+    }
+    with yt_dlp.YoutubeDL(stream_opts) as ydl:
+        info = ydl.extract_info(youtube_url, download=False)
+    stream_url = info.get("url")
+    if not stream_url:
+        raise ValueError("Audio stream URL not found")
+    raw_headers = info.get("http_headers") or {}
+    http_headers = {
+        str(key): str(value)
+        for key, value in raw_headers.items()
+        if value is not None
+    }
+    raw_chunk_size = (info.get("downloader_options") or {}).get("http_chunk_size")
+    try:
+        chunk_size = int(raw_chunk_size) if raw_chunk_size else _SEGMENT_BYTES
+    except (TypeError, ValueError):
+        chunk_size = _SEGMENT_BYTES
+    return {
+        "url": stream_url,
+        "http_headers": http_headers,
+        "chunk_size": max(1, min(chunk_size, _SEGMENT_BYTES)),
+        "available_at": float(info.get("available_at") or 0),
+    }
+
+
 async def _resolve_video_url(video_id: str) -> VideoStreamInfo:
     """解決済み URL とその取得条件をキャッシュ付きで返す。
 
@@ -95,6 +133,15 @@ async def _resolve_video_url(video_id: str) -> VideoStreamInfo:
         return cached
     url = await _run_ytdlp(_yt_video_url, video_id)
     _video_url_cache.set(video_id, url, _VIDEO_URL_TTL)
+    return url
+
+
+async def _resolve_audio_url(video_id: str) -> VideoStreamInfo:
+    cached = _audio_url_cache.get(video_id)
+    if cached is not None:
+        return cached
+    url = await _run_ytdlp(_yt_audio_url, video_id)
+    _audio_url_cache.set(video_id, url, _VIDEO_URL_TTL)
     return url
 
 
@@ -110,7 +157,8 @@ def _capped_range(
         if m:
             start = int(m.group(1))
             req_end = int(m.group(2)) if m.group(2) else None
-    safe_max_bytes = max(1, min(max_bytes, _SEGMENT_BYTES))
+    server_limit = _INITIAL_SEGMENT_BYTES if start == 0 else _SEGMENT_BYTES
+    safe_max_bytes = max(1, min(max_bytes, server_limit))
     cap_end = start + safe_max_bytes - 1
     end = cap_end if req_end is None else min(req_end, cap_end)
     return f"bytes={start}-{end}"
@@ -131,7 +179,10 @@ def _video_request_headers(
         headers["User-Agent"] = "Mozilla/5.0"
     if "accept" not in lower_names:
         headers["Accept"] = "*/*"
-    headers["Range"] = _capped_range(range_header, stream_info["chunk_size"])
+    # 先頭だけは長尺 MP4 の moov atom を読み切れるよう大きく取得する。
+    initial_request = not range_header or re.match(r"bytes=0-", range_header)
+    max_bytes = _INITIAL_SEGMENT_BYTES if initial_request else stream_info["chunk_size"]
+    headers["Range"] = _capped_range(range_header, max_bytes)
     return headers
 
 
@@ -154,8 +205,7 @@ async def _wait_for_stream_availability(
     await asyncio.sleep(wait_seconds)
 
 
-@router.get("/video/{video_id}")
-async def stream_video(video_id: str, request: Request):
+async def _stream_media(video_id: str, request: Request, resolver, url_cache):
     """通常動画配信（短いセグメント化プロキシ方式）
 
     実装ポイント:
@@ -169,7 +219,7 @@ async def stream_video(video_id: str, request: Request):
     """
     _validate_video_id(video_id)
     try:
-        stream_info = await _resolve_video_url(video_id)
+        stream_info = await resolver(video_id)
         stream_url = stream_info["url"]
         # SSRF defense in depth: yt-dlp 出力も allowlist 検証する
         # (yt-dlp が予期せぬ URL を返すケースをカバー)
@@ -198,7 +248,7 @@ async def stream_video(video_id: str, request: Request):
                 if upstream.status_code not in (403, 410):
                     break
 
-                _video_url_cache.delete(video_id)
+                url_cache.delete(video_id)
                 if attempt == 1:
                     break
 
@@ -211,7 +261,7 @@ async def stream_video(video_id: str, request: Request):
                     rejected_status,
                     video_id,
                 )
-                stream_info = await _resolve_video_url(video_id)
+                stream_info = await resolver(video_id)
                 stream_url = stream_info["url"]
                 if not _is_safe_proxy_url(stream_url):
                     raise HTTPException(status_code=403, detail="Stream URL is not allowed")
@@ -300,3 +350,15 @@ async def stream_video(video_id: str, request: Request):
                     "message": f"動画エラー: {error_msg[:100]}",
                 },
             )
+
+
+@router.get("/video/{video_id}")
+async def stream_video(video_id: str, request: Request):
+    """最大 720p の通常動画を Range プロキシする。"""
+    return await _stream_media(video_id, request, _resolve_video_url, _video_url_cache)
+
+
+@router.get("/audio/{video_id}")
+async def stream_audio(video_id: str, request: Request):
+    """再エンコードせず、YouTube の音声専用ストリームを Range プロキシする。"""
+    return await _stream_media(video_id, request, _resolve_audio_url, _audio_url_cache)

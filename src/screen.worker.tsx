@@ -23,8 +23,9 @@ const TARGET = 'main';
 Ubi.media.setVisible(true, TARGET);
 
 // ── controls からのコマンドを Ubi.media に流す ───────
-VPEvents.on('vp:media:load', ({ url, mode }) => {
-    Ubi.media.load(url, TARGET, mode === 'live' ? 'hls' : 'auto', 'video');
+VPEvents.on('vp:media:load', ({ url, mode, kind }) => {
+    Ubi.media.setVisible(kind === 'video', TARGET);
+    Ubi.media.load(url, TARGET, mode === 'live' ? 'hls' : 'auto', kind);
 });
 VPEvents.on('vp:media:play', () => Ubi.media.play(TARGET));
 VPEvents.on('vp:media:pause', () => Ubi.media.pause(TARGET));
@@ -32,8 +33,11 @@ VPEvents.on('vp:media:seek', ({ time }) => Ubi.media.seek(time, TARGET));
 VPEvents.on('vp:media:volume', ({ volume }) => Ubi.media.setVolume(volume, TARGET));
 
 // ── <video> 要素のイベント (Ubi.media SDK) → controls へ転送 ──
-// 進捗(currentTime)は controls の共有時計から算出するため timeUpdate は転送しない
-// （毎フレームのワーカー間通信を避ける）。loaded / ended / error のみ転送する。
+// timeUpdate は controls で共有時計と実メディアのズレを検出するため転送する。
+VPEvents.on('media:timeUpdate', ({ targetId, currentTime, duration }) => {
+    if (targetId !== TARGET) return;
+    VPEvents.emit('vp:media:timeUpdate', { currentTime, duration }, VPTarget.controls);
+});
 VPEvents.on('media:loaded', ({ targetId, duration }) => {
     if (targetId !== TARGET) return;
     VPEvents.emit('vp:media:loaded', { duration }, VPTarget.controls);
@@ -45,4 +49,5 @@ VPEvents.on('media:ended', ({ targetId }) => {
 VPEvents.on('media:error', ({ targetId, message }) => {
     if (targetId !== TARGET) return;
     Ubi.log(`[screen] media error: ${message}`, 'warn');
+    VPEvents.emit('vp:media:error', { message }, VPTarget.controls);
 });

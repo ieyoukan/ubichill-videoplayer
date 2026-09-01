@@ -77,6 +77,12 @@ export const VideoIcon = ({ size = 16 }: IconProps): JSX.Element => (
     </svg>
 );
 
+export const AudioOnlyIcon = ({ size = 16 }: IconProps): JSX.Element => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" />
+    </svg>
+);
+
 export const ListIcon = ({ size = 16 }: IconProps): JSX.Element => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
         <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />

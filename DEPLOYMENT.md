@@ -238,10 +238,10 @@ uvicorn main:app --workers 4
 - レートリミット実装
 
 ### CPU使用率が高い
-**原因**: ffmpegのトランスコード処理
+**原因**: yt-dlp の同時 URL 解決が多い
 **対処**:
-- CPU limitを増やす
-- 動画品質を下げる（720p以下）
+- `YTDLP_MAX_CONCURRENT` を下げる
+- レプリカ数を増やす
 
 ## 📝 CI/CD統合
 

@@ -37,14 +37,16 @@ export const VPTarget = {
 
 export const VPEvents = Ubi.event.define<{
     // ── controls → screen (再生コマンド) ──
-    'vp:media:load': { url: string; mode: 'live' | 'video' };
+    'vp:media:load': { url: string; mode: 'live' | 'video'; kind: 'audio' | 'video' };
     'vp:media:play': Empty;
     'vp:media:pause': Empty;
     'vp:media:seek': { time: number };
     'vp:media:volume': { volume: number };
     // ── screen → controls (DOM <video> 状態通知) ──
     'vp:media:loaded': { duration: number };
+    'vp:media:timeUpdate': { currentTime: number; duration: number };
     'vp:media:ended': Empty;
+    'vp:media:error': { message: string };
     // ── controls → playlist (トラック操作) ──
     'vp:track:next': { loop: LoopMode; shuffle: boolean };
     'vp:track:prev': Empty;
@@ -58,6 +60,7 @@ export const VPEvents = Ubi.event.define<{
     'vp:track:replay': Empty;
     // ── Ubi.media SDK 由来 (DOM <video> イベント) ──
     'media:loaded': { targetId: string; duration: number };
+    'media:timeUpdate': { targetId: string; currentTime: number; duration: number };
     'media:ended': { targetId: string };
     'media:error': { targetId: string; message: string };
 }>();

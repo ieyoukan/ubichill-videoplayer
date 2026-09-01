@@ -27,6 +27,7 @@ export const config: ComponentConfig = {
 };
 
 import {
+    AudioOnlyIcon,
     PauseIcon,
     PlayIcon,
     RepeatIcon,
@@ -38,6 +39,7 @@ import {
     VolumeLowIcon,
     VolumeMediumIcon,
     VolumeMuteIcon,
+    VideoIcon,
 } from './icons';
 import { computeCurrentTime, formatTime, isClockOverrun } from './lib/playback';
 import { extractVideoId, thumbnailUrl } from './lib/youtube';
@@ -56,6 +58,7 @@ const state = Ubi.state.define({
     duration: Ubi.state.sync(0, { editable: false }),
     loop: Ubi.state.sync<LoopMode>('none', { label: 'ループ', options: ['none', 'one', 'all'] }),
     shuffle: Ubi.state.sync(false, { label: 'シャッフル' }),
+    audioOnly: Ubi.state.sync(false, { label: 'スクリーンを畳む' }),
     apiBase: Ubi.state.sync(DEFAULT_API_BASE, { label: 'API ベース URL' }),
     // ── 共有 + 永続 (per-user) ──
     myVolume: Ubi.state.sync(0.7, { perUser: true, editable: false }),
@@ -64,6 +67,7 @@ const state = Ubi.state.define({
     currentIndex: 0,
     totalTracks: 0,
     isLoading: false,
+    errorMessage: '',
     // ClockSystem が 100ms ごとにインクリメントする進行バー時計用カウンタ。
     // ControlsView がこれを読むことで、Date.now() 経過による再描画が自動追跡される。
     // React の useEffect + setInterval → setState と等価なパターン。
@@ -77,8 +81,23 @@ function currentTime(): number {
 
 function buildTrackUrl(track: Track): string {
     const base = state.local.apiBase.trim() || DEFAULT_API_BASE;
-    const endpoint = track.mode === 'live' ? 'live' : 'video';
+    const endpoint =
+        track.mode === 'live' ? (state.local.audioOnly ? 'live-audio' : 'live') : state.local.audioOnly ? 'audio' : 'video';
     return `${base}/${endpoint}/${extractVideoId(track.id)}`;
+}
+
+function loadCurrentTrack(): void {
+    const track = state.local.currentTrack;
+    if (!track) return;
+    state.batch(() => {
+        state.local.isLoading = true;
+        state.local.errorMessage = '';
+    });
+    VPEvents.emit(
+        'vp:media:load',
+        { url: buildTrackUrl(track), mode: track.mode, kind: state.local.audioOnly ? 'audio' : 'video' },
+        VPTarget.screen,
+    );
 }
 
 // ── screen / playlist へのエイリアス (events.ts に集約) ──
@@ -137,11 +156,15 @@ const onLoopCycle = (): void => {
 const onVolumeChange = (v: number): void => {
     state.local.myVolume = v;
 };
+const onAudioOnlyToggle = (): void => {
+    state.local.audioOnly = !state.local.audioOnly;
+};
 
 // ── 副作用のみ。描画は state 読み取りによる自動追跡に任せる ──
 state.onChange('isPlaying', scheduleSyncVideo);
 state.onChange('baselineTime', scheduleSyncVideo);
 state.onChange('playEpoch', scheduleSyncVideo);
+state.onChange('audioOnly', loadCurrentTrack);
 state.onChange('myVolume', (v) => {
     VPEvents.emit('vp:media:volume', { volume: v }, VPTarget.screen);
 });
@@ -157,6 +180,7 @@ export default function ControlsView() {
     const progress = state.local.duration > 0 ? (ct / state.local.duration) * 100 : 0;
     const isLive = track?.mode === 'live';
     const isLoading = state.local.isLoading;
+    const errorMessage = state.local.errorMessage;
     const volume = state.local.myVolume;
     const VolumeIcon =
         volume === 0 ? VolumeMuteIcon : volume < 0.3 ? VolumeLowIcon : volume < 0.7 ? VolumeMediumIcon : VolumeHighIcon;
@@ -229,13 +253,13 @@ export default function ControlsView() {
                             style={{
                                 fontSize: '12px',
                                 fontWeight: '600',
-                                color: '#fff',
+                                color: errorMessage ? '#ff6b6b' : '#fff',
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                             }}
                         >
-                            {track ? track.title || track.id : '---'}
+                            {errorMessage || (track ? track.title || track.id : '---')}
                         </div>
                         <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)' }}>
                             {formatTime(ct)} /{' '}
@@ -293,6 +317,13 @@ export default function ControlsView() {
                     <CtrlBtn active={state.local.loop !== 'none'} onClick={onLoopCycle}>
                         <LoopIconComp size={16} />
                     </CtrlBtn>
+                    <CtrlBtn
+                        active={state.local.audioOnly}
+                        title={state.local.audioOnly ? 'スクリーンを展開' : 'スクリーンを畳んで音声のみ再生'}
+                        onClick={onAudioOnlyToggle}
+                    >
+                        {state.local.audioOnly ? <VideoIcon size={16} /> : <AudioOnlyIcon size={16} />}
+                    </CtrlBtn>
                     <span style={{ color: 'rgba(255,255,255,0.8)', display: 'flex', alignItems: 'center' }}>
                         <VolumeIcon size={16} />
                     </span>
@@ -325,6 +356,7 @@ function CtrlBtn({
     onClick,
     disabled = false,
     active = false,
+    title,
 }: {
     children:
         | import('ubichill/jsx-runtime').JSX.Element
@@ -333,11 +365,13 @@ function CtrlBtn({
     onClick: () => void;
     disabled?: boolean;
     active?: boolean;
+    title?: string;
 }): import('ubichill/jsx-runtime').JSX.Element {
     return (
         <button
             type="button"
             disabled={disabled}
+            title={title}
             style={{
                 background: 'transparent',
                 border: 'none',
@@ -383,7 +417,7 @@ VPEvents.on('vp:track:current', ({ track, index, total }) => {
     });
 
     if (needLoad && track) {
-        VPEvents.emit('vp:media:load', { url: buildTrackUrl(track), mode: track.mode }, VPTarget.screen);
+        loadCurrentTrack();
     }
 });
 
@@ -391,6 +425,7 @@ VPEvents.on('vp:media:loaded', ({ duration }) => {
     state.batch(() => {
         if (duration > 0) state.local.duration = duration;
         state.local.isLoading = false;
+        state.local.errorMessage = '';
 
         if (isClockOverrun(state.local)) {
             state.local.baselineTime = 0;
@@ -398,6 +433,33 @@ VPEvents.on('vp:media:loaded', ({ duration }) => {
         }
     });
     scheduleSyncVideo();
+});
+
+VPEvents.on('vp:media:error', ({ message }) => {
+    state.batch(() => {
+        state.local.isLoading = false;
+        state.local.errorMessage = message || '動画を読み込めませんでした';
+    });
+});
+
+// ローカルの実再生位置が共有時計から遅れた場合だけ、定期的に追いつかせる。
+// 小さなドリフトでシークを繰り返さないよう、閾値とクールダウンを設ける。
+let lastDriftCorrectionAt = 0;
+const DRIFT_THRESHOLD_SECONDS = 2;
+const DRIFT_CORRECTION_COOLDOWN_MS = 3000;
+VPEvents.on('vp:media:timeUpdate', ({ currentTime: actualTime, duration }) => {
+    if (duration > 0 && state.local.duration <= 0) state.local.duration = duration;
+    if (!state.local.isPlaying || state.local.isLoading || state.local.currentTrack?.mode === 'live') return;
+
+    const now = Date.now();
+    const expectedTime = currentTime();
+    if (
+        Math.abs(expectedTime - actualTime) >= DRIFT_THRESHOLD_SECONDS &&
+        now - lastDriftCorrectionAt >= DRIFT_CORRECTION_COOLDOWN_MS
+    ) {
+        lastDriftCorrectionAt = now;
+        VPEvents.emit('vp:media:seek', { time: expectedTime }, VPTarget.screen);
+    }
 });
 
 VPEvents.on('vp:media:ended', () => {

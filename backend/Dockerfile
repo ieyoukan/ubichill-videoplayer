@@ -3,7 +3,6 @@ FROM denoland/deno:bin-2.9.4 AS deno
 FROM python:3.12-slim-bookworm AS base
 
 RUN apt-get update && apt-get install -y \
-    ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

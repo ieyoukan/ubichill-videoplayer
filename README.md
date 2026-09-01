@@ -62,7 +62,9 @@ docker-compose -f docker-compose.cache.yml up -d
 | GET | `/api/stream/search?q={query}` | 動画検索 |
 | GET | `/api/stream/info/{video_id}` | 動画情報取得 |
 | GET | `/api/stream/live/{video_id}` | ライブ配信（HLS） |
+| GET | `/api/stream/live-audio/{video_id}` | ライブ配信の音声のみ（HLS） |
 | GET | `/api/stream/video/{video_id}` | 通常動画（MP4） |
+| GET | `/api/stream/audio/{video_id}` | 通常動画の音声のみ |
 | GET | `/api/stream/proxy?url={url}` | HLSセグメントプロキシ |
 
 ## 🎨 フロントエンド統合

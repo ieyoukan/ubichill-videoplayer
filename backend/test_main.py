@@ -69,6 +69,25 @@ async def consume(response) -> bytes:
 
 
 class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_audio_endpoint_uses_audio_only_resolver(self):
+        success = FakeUpstream(206, b"audio")
+        success.headers["content-type"] = "audio/mp4"
+        client = FakeClient()
+        resolve = AsyncMock(
+            return_value=stream_info("https://audio.googlevideo.com/videoplayback")
+        )
+
+        with (
+            patch.object(video_router, "_resolve_audio_url", resolve),
+            patch.object(video_router, "_safe_get", AsyncMock(return_value=success)),
+            patch.object(video_router.httpx, "AsyncClient", return_value=client),
+        ):
+            response = await video_router.stream_audio("w3vt4U13QYM", make_request())
+
+        resolve.assert_awaited_once_with("w3vt4U13QYM")
+        self.assertEqual(response.headers["content-type"], "audio/mp4")
+        self.assertEqual(await consume(response), b"audio")
+
     async def test_waits_asynchronously_until_stream_is_available(self):
         success = FakeUpstream(206, b"video")
         client = FakeClient()
@@ -219,7 +238,7 @@ class VideoRequestConditionTests(unittest.TestCase):
         headers = video_router._video_request_headers(info, "bytes=0-")
 
         self.assertEqual(headers["User-Agent"], "extractor-agent")
-        self.assertEqual(headers["Range"], "bytes=0-10485759")
+        self.assertEqual(headers["Range"], "bytes=0-67108863")
         self.assertNotIn("Host", headers)
         self.assertNotIn("Cookie", headers)
 
@@ -232,6 +251,13 @@ class VideoRequestConditionTests(unittest.TestCase):
         headers = video_router._video_request_headers(info, "bytes=100-")
 
         self.assertEqual(headers["Range"], "bytes=100-16777315")
+
+    def test_initial_range_honors_explicit_end(self):
+        info = stream_info("https://video.googlevideo.com/videoplayback")
+
+        headers = video_router._video_request_headers(info, "bytes=0-99")
+
+        self.assertEqual(headers["Range"], "bytes=0-99")
 
 
 if __name__ == "__main__":
