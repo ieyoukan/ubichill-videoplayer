@@ -2,7 +2,7 @@
  * video-player:screen Worker — メディア実行者。
  *
  * 状態を持たない。VPEvents 経由で受信したコマンドを Ubi.media.* に流し、
- * Ubi.media SDK からの DOM <video> イベント (media:*) を controls へ転送するだけ。
+ * media SDK からの DOM <video> イベント (media:*) を controls へ転送するだけ。
  * 黒 16:9 の背景は host 側の <video> 要素が標準で持つ。
  */
 
@@ -23,9 +23,14 @@ const TARGET = 'main';
 Ubi.media.setVisible(true, TARGET);
 
 // ── controls からのコマンドを Ubi.media に流す ───────
-VPEvents.on('vp:media:load', ({ url, mode, kind }) => {
-    Ubi.media.setVisible(kind === 'video', TARGET);
-    Ubi.media.load(url, TARGET, mode === 'live' ? 'hls' : 'auto', kind);
+VPEvents.on('vp:media:load', ({ source, presentation }) => {
+    Ubi.media.setVisible(presentation === 'video', TARGET);
+    Ubi.media.load({
+        targetId: TARGET,
+        source,
+        presentation,
+        sync: 'shared',
+    });
 });
 VPEvents.on('vp:media:play', () => Ubi.media.play(TARGET));
 VPEvents.on('vp:media:pause', () => Ubi.media.pause(TARGET));
@@ -33,7 +38,7 @@ VPEvents.on('vp:media:seek', ({ time }) => Ubi.media.seek(time, TARGET));
 VPEvents.on('vp:media:volume', ({ volume }) => Ubi.media.setVolume(volume, TARGET));
 
 // ── <video> 要素のイベント (Ubi.media SDK) → controls へ転送 ──
-// timeUpdate は controls で共有時計と実メディアのズレを検出するため転送する。
+// deprecated compatibility events. New controls use media:stateChange below.
 VPEvents.on('media:timeUpdate', ({ targetId, currentTime, duration }) => {
     if (targetId !== TARGET) return;
     VPEvents.emit('vp:media:timeUpdate', { currentTime, duration }, VPTarget.controls);
@@ -50,4 +55,10 @@ VPEvents.on('media:error', ({ targetId, message }) => {
     if (targetId !== TARGET) return;
     Ubi.log(`[screen] media error: ${message}`, 'warn');
     VPEvents.emit('vp:media:error', { message }, VPTarget.controls);
+});
+
+// v3: Host の単一 state machine と server-authoritative timeline をそのまま controls へ渡す。
+VPEvents.on('media:stateChange', (mediaState) => {
+    if (mediaState.targetId !== TARGET) return;
+    VPEvents.emit('vp:media:stateChange', mediaState, VPTarget.controls);
 });

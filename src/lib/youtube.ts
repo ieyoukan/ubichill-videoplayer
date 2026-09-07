@@ -37,7 +37,8 @@ export function extractVideoId(input: string): string {
  * 動画ID / URL からサムネイル URL を導出する。妥当でなければ空文字（壊れた img を出さない）。
  * 検索由来のトラックは thumbnail を持つが、エディタで URL/ID 直書きしたものは持たないので補完する。
  */
-export function thumbnailUrl(idOrUrl: string): string {
+export function thumbnailUrl(idOrUrl: string, apiBase = ''): string {
     const id = parseVideoId(idOrUrl);
-    return id ? `https://i.ytimg.com/vi/${id}/mqdefault.jpg` : '';
+    const base = apiBase.trim().replace(/\/$/, '');
+    return id && base ? `${base}/thumbnail/${id}` : '';
 }

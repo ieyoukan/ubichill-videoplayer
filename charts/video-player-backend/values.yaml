@@ -67,6 +67,7 @@ resources:
     memory: 512Mi
 
 autoscaling:
+  # opaque HLS session は現在 Pod 内メモリ保持。共有 store 導入前は有効化しないこと。
   enabled: false
   minReplicas: 2
   maxReplicas: 10

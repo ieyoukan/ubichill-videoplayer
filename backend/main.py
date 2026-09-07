@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import ALLOWED_ORIGINS, ROOT_PATH, logger
-from app.routers import info, live, meta, proxy, search, thumbnail, video
+from app.routers import info, live, meta, search, stream, thumbnail, video
 from app.ytdlp_client import ytdlp_executor
 
 
@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router_module in (meta, search, info, thumbnail, proxy, live, video):
+for router_module in (meta, search, info, thumbnail, live, video, stream):
     app.include_router(router_module.router)
 
 

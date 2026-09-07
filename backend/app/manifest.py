@@ -1,36 +1,31 @@
-"""HLSマニフェスト書き換えとTSセグメントのContent-Type検出。"""
+"""HLS manifest URI rewriting helpers."""
 
 import re
-from urllib.parse import quote, urljoin
+from collections.abc import Callable
+from urllib.parse import urljoin
 
-from .config import ROOT_PATH
+_URI_ATTRIBUTE = re.compile(r'URI="([^"]+)"')
 
 
-def _rewrite_manifest_urls(content: str, base_url: str) -> str:
-    """HLSマニフェスト内のURLをプロキシURL に書き換え"""
+def _rewrite_manifest_urls(content: str, base_url: str, rewrite_url: Callable[[str], str]) -> str:
+    """Rewrite every HLS URI, including tag URI attributes and extensionless segments."""
 
-    proxy_path = f"{ROOT_PATH}/proxy" if ROOT_PATH else "/proxy"
+    def absolute(value: str) -> str:
+        return value if value.startswith(("http://", "https://")) else urljoin(base_url, value)
 
-    def replace_url(match):
-        original_url = match.group(1)
-        if original_url.startswith(proxy_path):
-            return original_url
-        full_url = (
-            original_url
-            if original_url.startswith("http")
-            else urljoin(base_url, original_url)
-        )
-        return f"{proxy_path}?url={quote(full_url, safe='')}"
-
-    content = re.sub(r'(https?://[^\s"]+\.(?:m3u8|ts))', replace_url, content)
-    content = re.sub(
-        r"^(?!#)([^\s]+\.(?:m3u8|ts))$", replace_url, content, flags=re.MULTILINE
-    )
-    return content
+    rewritten: list[str] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            rewritten.append(line)
+        elif stripped.startswith("#"):
+            rewritten.append(_URI_ATTRIBUTE.sub(lambda match: f'URI="{rewrite_url(absolute(match.group(1)))}"', line))
+        else:
+            rewritten.append(rewrite_url(absolute(stripped)))
+    return "\n".join(rewritten) + ("\n" if content.endswith("\n") else "")
 
 
 def _get_content_type_for_ts(content: bytes, original_type: str) -> str:
-    """TSセグメントのContent-Typeを検出"""
-    if len(content) > 0 and content[0] == 0x47:
-        return "video/MP2T"  # MPEG-TS magic byte detected
+    if content and content[0] == 0x47:
+        return "video/MP2T"
     return original_type

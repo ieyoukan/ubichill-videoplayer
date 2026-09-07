@@ -20,6 +20,8 @@ import { formatTime } from './lib/playback';
 import { thumbnailUrl } from './lib/youtube';
 import type { LoopMode, Track } from './types';
 
+const DEFAULT_API_BASE = 'https://videoplayer.youkan.uk';
+
 const state = Ubi.state.define({
     playlist: Ubi.state.sync([] as Track[], {
         label: 'プレイリスト',
@@ -159,7 +161,7 @@ export default function PlaylistView() {
                             onUbiClick={() => selectTrack(i)}
                         >
                             <img
-                                src={t.thumbnail || thumbnailUrl(t.id)}
+                                src={thumbnailUrl(t.id, DEFAULT_API_BASE)}
                                 alt=""
                                 loading="lazy"
                                 decoding="async"

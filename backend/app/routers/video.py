@@ -352,13 +352,13 @@ async def _stream_media(video_id: str, request: Request, resolver, url_cache):
             )
 
 
-@router.get("/video/{video_id}")
+@router.get("/video/{video_id}", name="stream_video", deprecated=True)
 async def stream_video(video_id: str, request: Request):
     """最大 720p の通常動画を Range プロキシする。"""
     return await _stream_media(video_id, request, _resolve_video_url, _video_url_cache)
 
 
-@router.get("/audio/{video_id}")
+@router.get("/audio/{video_id}", deprecated=True)
 async def stream_audio(video_id: str, request: Request):
     """再エンコードせず、YouTube の音声専用ストリームを Range プロキシする。"""
     return await _stream_media(video_id, request, _resolve_audio_url, _audio_url_cache)

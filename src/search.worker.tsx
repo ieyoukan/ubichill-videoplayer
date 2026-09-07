@@ -59,7 +59,7 @@ const addFromUrl = async (): Promise<void> => {
     emitAddTrack({
         id: videoId,
         title: info.title ?? state.local.urlInput,
-        thumbnail: info.thumbnail ?? thumbnailUrl(videoId),
+        thumbnail: info.thumbnail ?? thumbnailUrl(videoId, apiBase()),
         duration: info.duration ?? 0,
         mode: state.local.selectedMode,
     });
@@ -81,7 +81,7 @@ const addResult = (r: SearchResult): void => {
     emitAddTrack({
         id: r.id,
         title: r.title,
-        thumbnail: r.thumbnail,
+        thumbnail: thumbnailUrl(r.id, apiBase()),
         duration: r.duration,
         mode: state.local.selectedMode,
     });

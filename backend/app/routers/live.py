@@ -4,12 +4,13 @@ from typing import Any, Dict
 
 import yt_dlp
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse
 
 from ..cache import TTLCache
 from ..config import CACHE_LIVE_TTL, CACHE_MAX_SIZE
 from ..security import _validate_video_id
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
-from .proxy import proxy_url
+from ..hls_gateway import create_stream
 
 router = APIRouter()
 
@@ -50,16 +51,19 @@ def _yt_live_audio_url(video_id: str) -> str:
     return stream_url
 
 
-async def _stream_live(video_id: str, request: Request, resolver, cache, cache_prefix: str):
+async def resolve_live_url(video_id: str, audio_only: bool = False) -> str:
     _validate_video_id(video_id)
+    resolver = _yt_live_audio_url if audio_only else _yt_live_url
+    cache = _live_audio_cache if audio_only else _live_cache
+    cache_prefix = "live-audio" if audio_only else "live"
     cache_key = f"{cache_prefix}:{video_id}"
     cached = cache.get(cache_key)
     if cached is not None:
-        return await proxy_url(cached, request)
+        return cached
     try:
         stream_url = await _run_ytdlp(resolver, video_id)
         cache.set(cache_key, stream_url, CACHE_LIVE_TTL)
-        return await proxy_url(stream_url, request)
+        return stream_url
 
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
@@ -85,13 +89,15 @@ async def _stream_live(video_id: str, request: Request, resolver, cache, cache_p
             )
 
 
-@router.get("/live/{video_id}")
+@router.get("/live/{video_id}", deprecated=True)
 async def stream_live(video_id: str, request: Request):
     """最大 720p のライブ HLS を配信する。"""
-    return await _stream_live(video_id, request, _yt_live_url, _live_cache, "live")
+    stream_id = create_stream(await resolve_live_url(video_id))
+    return RedirectResponse(request.url_for("stream_master", stream_id=stream_id), status_code=307)
 
 
-@router.get("/live-audio/{video_id}")
+@router.get("/live-audio/{video_id}", deprecated=True)
 async def stream_live_audio(video_id: str, request: Request):
     """ライブの音声専用 HLS を配信する。"""
-    return await _stream_live(video_id, request, _yt_live_audio_url, _live_audio_cache, "live-audio")
+    stream_id = create_stream(await resolve_live_url(video_id, audio_only=True))
+    return RedirectResponse(request.url_for("stream_master", stream_id=stream_id), status_code=307)

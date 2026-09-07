@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 import yt_dlp
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..cache import TTLCache
 from ..config import CACHE_MAX_SIZE, CACHE_SEARCH_TTL, logger
@@ -33,13 +33,10 @@ def _yt_search(q: str, limit: int) -> list:
             if entry.get("is_live") or entry.get("live_status") in ("is_live", "is_upcoming"):
                 continue
             vid_id = entry.get("id", "")
-            # extract_flat では thumbnail が空の場合があるため ytimg で補完
-            thumbnail = entry.get("thumbnail") or f"https://i.ytimg.com/vi/{vid_id}/mqdefault.jpg"
             tracks.append(
                 {
                     "id": vid_id,
                     "title": entry.get("title", "Unknown"),
-                    "thumbnail": thumbnail,
                     "duration": entry.get("duration", 0),
                     "author": entry.get("uploader", "Unknown"),
                 }
@@ -50,7 +47,11 @@ def _yt_search(q: str, limit: int) -> list:
 
 
 @router.get("/search")
-async def search_tracks(q: str, limit: int = 10):
+async def search_tracks(
+    request: Request,
+    q: str = Query(max_length=200),
+    limit: int = Query(default=10, ge=1, le=25),
+):
     """YouTube検索（TTL キャッシュ付き）"""
     q = (q or "").strip()
     if not q:
@@ -58,11 +59,17 @@ async def search_tracks(q: str, limit: int = 10):
     cache_key = f"search:{q.lower()}:{limit}"
     cached = _search_cache.get(cache_key)
     if cached is not None:
-        return cached
+        return [
+            {**track, "thumbnail": str(request.url_for("get_thumbnail", video_id=track["id"]))}
+            for track in cached
+        ]
     try:
         tracks = await _run_ytdlp(_yt_search, q, limit)
         _search_cache.set(cache_key, tracks, CACHE_SEARCH_TTL)
-        return tracks
+        return [
+            {**track, "thumbnail": str(request.url_for("get_thumbnail", video_id=track["id"]))}
+            for track in tracks
+        ]
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except Exception as e:

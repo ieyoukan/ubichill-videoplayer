@@ -12,7 +12,7 @@
  * EmitOptions 定数を一元管理する。
  */
 
-import type { EmitOptions } from 'ubichill';
+import type { EmitOptions, MediaError, MediaMetadata, MediaSource, MediaState } from 'ubichill';
 
 import type { LoopMode, Track } from './types';
 
@@ -37,7 +37,7 @@ export const VPTarget = {
 
 export const VPEvents = Ubi.event.define<{
     // ── controls → screen (再生コマンド) ──
-    'vp:media:load': { url: string; mode: 'live' | 'video'; kind: 'audio' | 'video' };
+    'vp:media:load': { source: MediaSource; presentation: 'audio' | 'video' };
     'vp:media:play': Empty;
     'vp:media:pause': Empty;
     'vp:media:seek': { time: number };
@@ -47,6 +47,7 @@ export const VPEvents = Ubi.event.define<{
     'vp:media:timeUpdate': { currentTime: number; duration: number };
     'vp:media:ended': Empty;
     'vp:media:error': { message: string };
+    'vp:media:stateChange': MediaState;
     // ── controls → playlist (トラック操作) ──
     'vp:track:next': { loop: LoopMode; shuffle: boolean };
     'vp:track:prev': Empty;
@@ -59,8 +60,28 @@ export const VPEvents = Ubi.event.define<{
     // ── playlist → controls (同トラック replay: loop='one' or 単一トラック loop='all') ──
     'vp:track:replay': Empty;
     // ── Ubi.media SDK 由来 (DOM <video> イベント) ──
-    'media:loaded': { targetId: string; duration: number };
-    'media:timeUpdate': { targetId: string; currentTime: number; duration: number };
-    'media:ended': { targetId: string };
-    'media:error': { targetId: string; message: string };
+    /** @deprecated Host v3 では media:stateChange を使用する。 */
+    'media:loaded': {
+        targetId: string;
+        duration: number;
+        loadId?: string;
+        metadata?: MediaMetadata;
+    };
+    /** @deprecated Host v3 では media:stateChange を使用する。 */
+    'media:timeUpdate': {
+        targetId: string;
+        currentTime: number;
+        duration: number;
+        loadId?: string;
+    };
+    /** @deprecated Host v3 では media:stateChange を使用する。 */
+    'media:ended': { targetId: string; loadId?: string };
+    /** @deprecated Host v3 では media:stateChange を使用する。 */
+    'media:error': {
+        targetId: string;
+        message: string;
+        loadId?: string;
+        error?: MediaError;
+    };
+    'media:stateChange': MediaState;
 }>();

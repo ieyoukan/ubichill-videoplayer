@@ -28,20 +28,25 @@ async def get_video_info(video_id: str, request: Request):
     cache_key = f"info:{video_id}"
     cached = _info_cache.get(cache_key)
     if cached is not None:
-        return cached
+        return {
+            **cached,
+            "thumbnail": str(request.url_for("get_thumbnail", video_id=video_id)),
+            "streamUrl": str(request.url_for("stream_video", video_id=video_id)),
+        }
     try:
         info = await _run_ytdlp(_yt_info, video_id)
-        base_url = f"{request.url.scheme}://{request.url.netloc}"
         result = {
             "id": info.get("id"),
             "title": info.get("title", "Unknown"),
-            "thumbnail": info.get("thumbnail") or f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg",
             "duration": info.get("duration", 0),
             "author": info.get("uploader", "Unknown"),
-            "streamUrl": f"{base_url}/api/stream/video/{video_id}",
         }
         _info_cache.set(cache_key, result, CACHE_INFO_TTL)
-        return result
+        return {
+            **result,
+            "thumbnail": str(request.url_for("get_thumbnail", video_id=video_id)),
+            "streamUrl": str(request.url_for("stream_video", video_id=video_id)),
+        }
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except HTTPException:
