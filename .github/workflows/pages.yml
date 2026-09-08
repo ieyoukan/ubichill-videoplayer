@@ -5,8 +5,11 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'dist/**'
+      - 'scripts/verify-dist.mjs'
       - 'package.json'
       - 'tsconfig.json'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 concurrency:
@@ -21,19 +24,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-          cache: 'pnpm'
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      # SDK 2.1.0 が npm 公開されるまでは、対応HostのローカルSDKで生成・レビュー済みの
+      # distを配信する。古い公開SDKで再ビルドしてv3 APIを欠落させないための暫定境界。
+      # sourceを変えたpushにdistが含まれない場合は、古いbundleの公開を拒否する。
+      - name: Require dist update with source changes
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          changed="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+          if echo "$changed" | grep -Eq '^(src/|package.json|tsconfig.json)'; then
+            echo "$changed" | grep -Eq '^dist/' || {
+              echo "src/package changed without a committed dist update"
+              exit 1
+            }
+          fi
 
-      - name: Typecheck and build mod
-        run: npm run build
+      - name: Verify committed mod bundle
+        run: node scripts/verify-dist.mjs
 
       - name: Checkout gh-pages branch (worktree)
         run: |
