@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+          package-manager-cache: false
 
       # SDK 2.1.0 が npm 公開されるまでは、対応HostのローカルSDKで生成・レビュー済みの
       # distを配信する。古い公開SDKで再ビルドしてv3 APIを欠落させないための暫定境界。
