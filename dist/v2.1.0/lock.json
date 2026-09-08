@@ -1,0 +1,47 @@
+{
+  "id": "video-player",
+  "version": "2.1.0",
+  "manifestIntegrity": "sha256-qYuifALza3hSIHwsvvU5ZuAalhqcH6fM1+OYh5gK9Pg=",
+  "components": {
+    "video-player:controls": {
+      "workerUrl": "./controls/index.711fb66b.js",
+      "integrity": "sha256-cR+2axRQMm+PCSyLT8HGtcMo4CGSX3DBj4VjO8XjS+A=",
+      "capabilities": [
+        "event:emit",
+        "media:control",
+        "net:fetch",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ]
+    },
+    "video-player:playlist": {
+      "workerUrl": "./playlist/index.354a20ce.js",
+      "integrity": "sha256-NUogzsIWMaduNwHjSY2qcJ8Wii7EUIAfW/zXYr2j5qk=",
+      "capabilities": [
+        "event:emit",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ]
+    },
+    "video-player:screen": {
+      "workerUrl": "./screen/index.3b6909d9.js",
+      "integrity": "sha256-O2kJ2Xie9mBGDWzA+tIS1sZ7jgflrX+LyyB1OIyR+lA=",
+      "capabilities": [
+        "event:emit",
+        "media:control"
+      ]
+    },
+    "video-player:search": {
+      "workerUrl": "./search/index.2485c08e.js",
+      "integrity": "sha256-JIXAjoGB0iwmWGGnibuogZyWJcW1b0RJV8zbL7vICmc=",
+      "capabilities": [
+        "event:emit",
+        "net:fetch",
+        "scene:read",
+        "ui:render"
+      ]
+    }
+  }
+}

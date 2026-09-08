@@ -1,0 +1,42 @@
+[
+  {
+    "id": "video-player",
+    "name": "video-player",
+    "version": "3.0.0",
+    "components": [
+      "video-player:controls",
+      "video-player:playlist",
+      "video-player:screen",
+      "video-player:search"
+    ],
+    "versions": [
+      {
+        "version": "3.0.0",
+        "components": [
+          "video-player:controls",
+          "video-player:playlist",
+          "video-player:screen",
+          "video-player:search"
+        ]
+      },
+      {
+        "version": "2.1.0",
+        "components": [
+          "video-player:controls",
+          "video-player:playlist",
+          "video-player:screen",
+          "video-player:search"
+        ]
+      },
+      {
+        "version": "2.0.0",
+        "components": [
+          "video-player:controls",
+          "video-player:playlist",
+          "video-player:screen",
+          "video-player:search"
+        ]
+      }
+    ]
+  }
+]
