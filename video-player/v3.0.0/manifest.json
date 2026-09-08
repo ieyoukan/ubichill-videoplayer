@@ -1,7 +1,7 @@
 {
   "id": "video-player",
   "name": "video-player",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "components": {
     "video-player:controls": {
       "watchEntityTypes": [
@@ -17,13 +17,12 @@
       },
       "capabilities": [
         "event:emit",
-        "media:control",
         "net:fetch",
         "scene:read",
         "scene:update",
         "ui:render"
       ],
-      "workerUrl": "./controls/index.711fb66b.js"
+      "workerUrl": "./controls/index.69749d6e.js"
     },
     "video-player:playlist": {
       "watchEntityTypes": [
@@ -43,7 +42,7 @@
         "scene:update",
         "ui:render"
       ],
-      "workerUrl": "./playlist/index.354a20ce.js"
+      "workerUrl": "./playlist/index.c019faac.js"
     },
     "video-player:screen": {
       "mediaTargets": [
@@ -80,7 +79,7 @@
         "scene:read",
         "ui:render"
       ],
-      "workerUrl": "./search/index.2485c08e.js"
+      "workerUrl": "./search/index.d0758a28.js"
     }
   },
   "assets": []
