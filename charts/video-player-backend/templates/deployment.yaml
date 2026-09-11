@@ -42,11 +42,11 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            - name: YTDLP_PLAYER_CLIENT
+              value: {{ .Values.potProvider.playerClient | quote }}
             {{- if .Values.potProvider.enabled }}
             - name: YTDLP_POT_PROVIDER_URL
               value: http://127.0.0.1:{{ .Values.potProvider.port }}
-            - name: YTDLP_PLAYER_CLIENT
-              value: {{ .Values.potProvider.playerClient | quote }}
             {{- end }}
             {{- if .Values.cookies.enabled }}
             - name: YTDLP_COOKIES_FILE
