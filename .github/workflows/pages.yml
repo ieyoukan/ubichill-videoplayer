@@ -8,6 +8,7 @@ on:
       - 'dist/**'
       - 'scripts/verify-dist.mjs'
       - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'tsconfig.json'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -32,24 +33,18 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      # SDK 2.1.0 が npm 公開されるまでは、対応HostのローカルSDKで生成・レビュー済みの
-      # distを配信する。古い公開SDKで再ビルドしてv3 APIを欠落させないための暫定境界。
-      # sourceを変えたpushにdistが含まれない場合は、古いbundleの公開を拒否する。
-      - name: Require dist update with source changes
-        if: github.event_name == 'push'
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          changed="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
-          if echo "$changed" | grep -Eq '^(src/|package.json|tsconfig.json)'; then
-            echo "$changed" | grep -Eq '^dist/' || {
-              echo "src/package changed without a committed dist update"
-              exit 1
-            }
-          fi
+      - name: Enable pnpm
+        run: corepack enable
 
-      - name: Verify committed mod bundle
-        run: node scripts/verify-dist.mjs
+      # npm 公開済みの SDK を lockfile で 2.1.0 に固定し、配信物を毎回ソースから再現する。
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build mod bundle
+        run: pnpm build
+
+      - name: Verify mod bundle
+        run: pnpm verify
 
       - name: Checkout gh-pages branch (worktree)
         run: |

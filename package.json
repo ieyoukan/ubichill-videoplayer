@@ -2,6 +2,7 @@
     "name": "@ubichill/video-player",
     "version": "3.0.0",
     "private": true,
+    "homepage": "https://ieyoukan.github.io/ubichill-videoplayer",
     "packageManager": "pnpm@10.33.2",
     "main": "src/index.ts",
     "types": "src/index.ts",
@@ -12,10 +13,12 @@
         "ubichill": "^2.1.0"
     },
     "devDependencies": {
-        "typescript": "^5.9.0"
+        "typescript": "^5.9.0",
+        "ubichill": "2.1.0"
     },
     "scripts": {
         "typecheck": "tsc --noEmit",
-        "build": "pnpm typecheck && pnpm exec ubichill build"
+        "build": "pnpm typecheck && pnpm exec ubichill build",
+        "verify": "node scripts/verify-dist.mjs"
     }
 }
