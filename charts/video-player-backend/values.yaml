@@ -106,7 +106,9 @@ potProvider:
   enabled: true
   image:
     repository: brainicism/bgutil-ytdlp-pot-provider
-    tag: "1.3.1-deno"
+    # backendのPython pluginとprotocol versionを一致させる。
+    # mismatchするとtoken生成時にsidecarがunreadyとなり、公開resolveが502になる。
+    tag: "1.3.2-deno"
     pullPolicy: IfNotPresent
   port: 4416
   playerClient: "mweb"

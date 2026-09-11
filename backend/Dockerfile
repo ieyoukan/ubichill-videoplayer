@@ -31,7 +31,7 @@ RUN uv pip install -r pyproject.toml
 ARG YTDLP_REFRESH=dev
 RUN uv pip install --upgrade --prerelease allow \
     "yt-dlp[default]" \
-    bgutil-ytdlp-pot-provider
+    "bgutil-ytdlp-pot-provider==1.3.2"
 
 # ── Production ───────────────────────────────────────────────
 FROM base AS production
