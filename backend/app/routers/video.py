@@ -352,6 +352,18 @@ async def _stream_media(video_id: str, request: Request, resolver, url_cache):
             )
 
 
+@router.get("/stream/file/video/{video_id}", name="stream_file_video")
+async def stream_file_video(video_id: str, request: Request):
+    """通常動画を同一originのRange gatewayとして配信する。"""
+    return await _stream_media(video_id, request, _resolve_video_url, _video_url_cache)
+
+
+@router.get("/stream/file/audio/{video_id}", name="stream_file_audio")
+async def stream_file_audio(video_id: str, request: Request):
+    """通常動画の音声を同一originのRange gatewayとして配信する。"""
+    return await _stream_media(video_id, request, _resolve_audio_url, _audio_url_cache)
+
+
 @router.get("/video/{video_id}", name="stream_video", deprecated=True)
 async def stream_video(video_id: str, request: Request):
     """最大 720p の通常動画を Range プロキシする。"""

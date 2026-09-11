@@ -64,6 +64,23 @@ class PlaybackDescriptorTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
+    def test_vod_descriptor_defaults_to_same_origin_file_gateway(self):
+        response = self.client.get(
+            "/resolve/w3vt4U13QYM?mode=video&presentation=video"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        source = response.json()["source"]
+        self.assertEqual(source["type"], "file")
+        self.assertRegex(source["url"], r"/stream/file/video/w3vt4U13QYM$")
+        self.assertNotIn("googlevideo", response.text)
+
+        audio = self.client.get(
+            "/resolve/w3vt4U13QYM?mode=video&presentation=audio"
+        ).json()["source"]
+        self.assertEqual(audio["type"], "file")
+        self.assertRegex(audio["url"], r"/stream/file/audio/w3vt4U13QYM$")
+
     def test_vod_descriptor_only_contains_backend_url(self):
         sources = {
             "video_url": "https://video.googlevideo.com/video.m3u8?signature=secret",
@@ -71,7 +88,9 @@ class PlaybackDescriptorTests(unittest.TestCase):
             "headers": {},
         }
         with patch("app.routers.stream.resolve_vod_hls_sources", AsyncMock(return_value=sources)):
-            response = self.client.get("/resolve/w3vt4U13QYM?mode=video&presentation=video")
+            response = self.client.get(
+                "/resolve/w3vt4U13QYM?mode=video&presentation=video&delivery=hls"
+            )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["cache-control"], "no-store")
         source = response.json()["source"]
@@ -93,7 +112,9 @@ class PlaybackDescriptorTests(unittest.TestCase):
             "headers": {},
         }
         with patch("app.routers.stream.resolve_vod_hls_sources", AsyncMock(return_value=sources)):
-            response = self.client.get("/resolve/w3vt4U13QYM?mode=video&presentation=audio")
+            response = self.client.get(
+                "/resolve/w3vt4U13QYM?mode=video&presentation=audio&delivery=hls"
+            )
         master = self.client.get(response.json()["source"]["url"])
         self.assertIn("#EXT-X-STREAM-INF", master.text)
         self.assertIn("/resource/", master.text)

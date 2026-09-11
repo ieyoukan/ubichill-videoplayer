@@ -183,9 +183,28 @@ async def resolve_playback(
     request: Request,
     mode: Literal["video", "live"] = "video",
     presentation: Literal["audio", "video"] = "video",
+    delivery: Literal["auto", "file", "hls"] = "auto",
 ):
     _validate_video_id(video_id)
     media_id = f"youtube:{mode}:{presentation}:{video_id}"
+    if mode == "video" and delivery != "hls":
+        route_name = (
+            "stream_file_audio" if presentation == "audio" else "stream_file_video"
+        )
+        return JSONResponse(
+            {
+                "source": {
+                    "id": media_id,
+                    "url": str(request.url_for(route_name, video_id=video_id)),
+                    "type": "file",
+                }
+            },
+            headers={
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     if mode == "video":
         try:
             sources = await resolve_vod_hls_sources(video_id, audio_only=presentation == "audio")

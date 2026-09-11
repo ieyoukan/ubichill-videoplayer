@@ -1,6 +1,6 @@
 # 🎬 Video Player Mod
 
-YouTube動画を backend 経由の opaque HLS と Ubichill の正規メディアタイムラインで再生する mod。
+YouTube動画を backend 経由の opaque media gateway と Ubichill の正規メディアタイムラインで再生する mod。
 video-player v3 は Ubichill SDK 2.1.0 以上（mod protocol v3 対応 Host）を必要とします。
 
 ## ✨ 特徴
@@ -16,7 +16,7 @@ video-player v3 は Ubichill SDK 2.1.0 以上（mod protocol v3 対応 Host）�
 ```text
 controls.worker ── Ubi.fetch(/resolve) ──> FastAPI + yt-dlp
        │                                      │
-       └── typed VPEvents ──> screen.worker   └── opaque HLS gateway ──> YouTube
+       └── typed VPEvents ──> screen.worker   └── opaque media gateway ──> YouTube
                                   │
                                   └── Ubi.media.load({ sync: "shared" })
                                              │
@@ -53,17 +53,19 @@ docker-compose -f docker-compose.cache.yml up -d
 
 | Method | Path | 説明 |
 |--------|------|------|
-| GET | `/api/stream/search?q={query}` | 動画検索 |
-| GET | `/api/stream/info/{video_id}` | 動画情報取得 |
-| GET | `/api/stream/resolve/{video_id}` | 安全な再生 descriptor を発行 |
-| GET | `/api/stream/live/{video_id}` | ライブ配信（opaque HLS URLへredirect・互換API） |
-| GET | `/api/stream/live-audio/{video_id}` | ライブ音声（opaque HLS URLへredirect・互換API） |
-| GET | `/api/stream/video/{video_id}` | 通常動画（deprecated MP4互換API） |
-| GET | `/api/stream/audio/{video_id}` | 通常動画の音声のみ（deprecated互換API） |
-| GET | `/api/stream/stream/{stream_id}/master.m3u8` | 短寿命opaque HLS manifest |
-| GET | `/api/stream/stream/{stream_id}/resource/{token}/{opaque_name}` | URL非公開のHLS resource gateway |
+| GET | `/search?q={query}` | 動画検索 |
+| GET | `/info/{video_id}` | 動画情報取得 |
+| GET | `/resolve/{video_id}` | 同一originの安全な再生descriptorを即時発行 |
+| GET | `/stream/file/video/{video_id}` | 通常動画のRange gateway |
+| GET | `/stream/file/audio/{video_id}` | 通常動画の音声Range gateway |
+| GET | `/stream/{stream_id}/master.m3u8` | live・明示HLS用の短寿命manifest |
+| GET | `/stream/{stream_id}/resource/{token}/{opaque_name}` | URL非公開のHLS resource gateway |
+| GET | `/video/{video_id}` | 通常動画（deprecated互換API） |
+| GET | `/audio/{video_id}` | 通常動画の音声（deprecated互換API） |
+| GET | `/live/{video_id}` | ライブ配信（deprecated互換API） |
+| GET | `/live-audio/{video_id}` | ライブ音声（deprecated互換API） |
 
-Google Video の署名付きURLはブラウザへ返しません。manifest内のvariant、音声、鍵、init segment、media segmentはすべて短寿命のopaque tokenへ置換され、redirect先もallowlistでホップごとに検証されます。
+Google Video の署名付きURLはブラウザへ返しません。VODは同一originのRange gateway、live/HLSは短寿命opaque tokenを使い、上流redirectもallowlistでホップごとに検証します。
 
 ## 🎨 フロントエンド統合
 

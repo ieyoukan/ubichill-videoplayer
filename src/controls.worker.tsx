@@ -100,8 +100,9 @@ async function loadCurrentTrack(): Promise<void> {
         const descriptor = JSON.parse(response.body) as PlaybackDescriptor;
         const expectedOrigin = new URL(resolveUrl).origin;
         const sourceOrigin = new URL(descriptor.source.url).origin;
+        const sourceType = descriptor.source.type;
         if (
-            descriptor.source.type !== 'hls' ||
+            (sourceType !== 'hls' && sourceType !== 'file') ||
             descriptor.source.id !== mediaIdFor(track) ||
             sourceOrigin !== expectedOrigin
         ) {
