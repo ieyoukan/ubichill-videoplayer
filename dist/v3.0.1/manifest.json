@@ -22,7 +22,7 @@
         "scene:update",
         "ui:render"
       ],
-      "workerUrl": "./controls/index.fda2398f.js"
+      "workerUrl": "./controls/index.f6217a79.js"
     },
     "video-player:playlist": {
       "watchEntityTypes": [
