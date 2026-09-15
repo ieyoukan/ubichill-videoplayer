@@ -10,11 +10,11 @@
         ".": "./src/index.ts"
     },
     "peerDependencies": {
-        "ubichill": "^2.1.0"
+        "ubichill": "^2.1.1"
     },
     "devDependencies": {
         "typescript": "^5.9.0",
-        "ubichill": "2.1.0"
+        "ubichill": "2.1.1"
     },
     "scripts": {
         "typecheck": "tsc --noEmit",

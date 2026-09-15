@@ -68,6 +68,12 @@ function currentTime(): number {
     return media?.timelineTime ?? media?.currentTime ?? 0;
 }
 
+function isMediaPlaying(media: MediaState | null): boolean {
+    if (!media) return false;
+    if (media.status === 'playing' || media.status === 'buffering') return true;
+    return media.status === 'seeking' && media.timeline?.phase === 'playing';
+}
+
 interface PlaybackDescriptor {
     source: MediaSource;
 }
@@ -131,7 +137,7 @@ const onSeek = (time: number): void => {
 };
 const onPlayToggle = (): void => {
     const media = state.local.mediaState;
-    const playing = media?.timeline?.phase === 'playing' || media?.status === 'playing';
+    const playing = isMediaPlaying(media);
     VPEvents.emit(playing ? 'vp:media:pause' : 'vp:media:play', {}, VPTarget.screen);
 };
 const onPrev = (): void => {
@@ -174,7 +180,7 @@ export default function ControlsView() {
     const VolumeIcon =
         volume === 0 ? VolumeMuteIcon : volume < 0.3 ? VolumeLowIcon : volume < 0.7 ? VolumeMediumIcon : VolumeHighIcon;
     const LoopIconComp = state.local.loop === 'one' ? RepeatOneIcon : RepeatIcon;
-    const isPlaying = media?.timeline?.phase === 'playing' || media?.status === 'playing';
+    const isPlaying = isMediaPlaying(media);
     const empty = state.local.totalTracks === 0;
     const seekBackground = isLoading
         ? 'linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(0,122,255,0.5) 50%, rgba(255,255,255,0.05) 100%)'
