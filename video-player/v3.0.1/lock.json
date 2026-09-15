@@ -1,11 +1,11 @@
 {
   "id": "video-player",
   "version": "3.0.1",
-  "manifestIntegrity": "sha256-smQVp7MvMssXdtZ3F7jmRJD2S/Mno+FKdKTMvAE71oo=",
+  "manifestIntegrity": "sha256-PTwP1Kl+HtjDpw2P7YyjKUYQmjkMYRY8rSq3bAyHk5k=",
   "components": {
     "video-player:controls": {
-      "workerUrl": "./controls/index.fda2398f.js",
-      "integrity": "sha256-/aI5jxp7WZO2ZIsVFG0sdUAj+Vi/3qXd+1Y59x7YS+o=",
+      "workerUrl": "./controls/index.f6217a79.js",
+      "integrity": "sha256-9iF6ebxM7f+Tw39PfgpG3pM6uGknOKzehTKf/5SpnD8=",
       "capabilities": [
         "event:emit",
         "net:fetch",
