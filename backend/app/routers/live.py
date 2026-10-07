@@ -39,7 +39,9 @@ def _yt_live_audio_url(video_id: str) -> str:
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
     stream_opts: Dict[str, Any] = {
         **_base_ydl_opts(),
-        "format": "bestaudio",
+        # HLS gateway に渡す URL は必ず HLS にする。
+        # bestaudio だけでは DASH/HTTPS の音声ファイルも選ばれる。
+        "format": "bestaudio[protocol=m3u8_native]/bestaudio[protocol=m3u8]",
         "youtube_include_dash_manifest": False,
         "hls_prefer_native": False,
     }

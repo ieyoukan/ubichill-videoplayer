@@ -95,7 +95,12 @@ def _yt_audio_url(video_id: str) -> VideoStreamInfo:
     youtube_url = f"https://www.youtube.com/watch?v={video_id}"
     stream_opts = {
         **_base_ydl_opts(),
-        "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio",
+        # Range gateway は単一ファイル専用。m4a の HLS も存在するため、
+        # 拡張子だけで選ぶとプレイリストを音声ファイルとして配信してしまう。
+        "format": (
+            "bestaudio[ext=m4a][protocol=https]/"
+            "bestaudio[ext=webm][protocol=https]/bestaudio[protocol=https]"
+        ),
         "youtube_include_dash_manifest": False,
     }
     with yt_dlp.YoutubeDL(stream_opts) as ydl:
