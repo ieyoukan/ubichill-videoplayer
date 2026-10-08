@@ -91,6 +91,18 @@ env:
   CACHE_SEARCH_TTL: "300"
   CACHE_INFO_TTL: "3600"
   CACHE_LIVE_TTL: "30"
+  # Ubichill のサービストークンを確かめる。信頼する Ubichill（カンマ区切り）とこのサービスのオリジン。
+  # プレビュー（https://pr-<番号>.ubichill.com）から使うときはその発行元も足す。
+  REQUIRE_SERVICE_TOKEN: "true"
+  UBICHILL_ISSUERS: "https://ubichill.com"
+  SERVICE_AUDIENCE: "https://videoplayer.youkan.uk"
+  SERVICE_ALLOWED_MODS: "video-player"
+  # 利用者ごとの回数制限（回数/秒数）
+  RATE_LIMIT_RESOLVE: "30/600"
+  RATE_LIMIT_SEARCH: "20/60"
+  RATE_LIMIT_INFO: "60/60"
+  # 再生 URL の有効期間（秒）。署名の鍵 MEDIA_URL_SECRET は未設定なら起動ごとに作る（replica 1 前提）。
+  MEDIA_URL_TTL: "21600"
 
 # yt-dlp cookies（bot 判定回避用・オプション）
 # enabled=true にすると、指定した Secret から cookies.txt をマウントして

@@ -3,10 +3,13 @@
 from typing import Any, Dict
 
 import yt_dlp
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..cache import TTLCache
 from ..config import CACHE_MAX_SIZE, CACHE_SEARCH_TTL, logger
+from ..media_url import thumbnail_url
+from ..rate_limit import rate_limited, search_limiter
+from ..service_auth import ServiceUser
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
 
 router = APIRouter()
@@ -48,7 +51,7 @@ def _yt_search(q: str, limit: int) -> list:
 
 @router.get("/search")
 async def search_tracks(
-    request: Request,
+    _user: ServiceUser = Depends(rate_limited(search_limiter)),
     q: str = Query(max_length=200),
     limit: int = Query(default=10, ge=1, le=25),
 ):
@@ -60,14 +63,14 @@ async def search_tracks(
     cached = _search_cache.get(cache_key)
     if cached is not None:
         return [
-            {**track, "thumbnail": str(request.url_for("get_thumbnail", video_id=track["id"]))}
+            {**track, "thumbnail": thumbnail_url(track["id"])}
             for track in cached
         ]
     try:
         tracks = await _run_ytdlp(_yt_search, q, limit)
         _search_cache.set(cache_key, tracks, CACHE_SEARCH_TTL)
         return [
-            {**track, "thumbnail": str(request.url_for("get_thumbnail", video_id=track["id"]))}
+            {**track, "thumbnail": thumbnail_url(track["id"])}
             for track in tracks
         ]
     except YTDLPError as e:

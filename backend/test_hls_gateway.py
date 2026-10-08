@@ -1,3 +1,5 @@
+import testing_env  # noqa: F401  app より先に環境変数を決める
+
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -5,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.hls_gateway import StreamSession, create_stream, get_stream
 from app.manifest import _rewrite_manifest_urls
+from app.service_auth import ServiceUser, require_service_user
 from main import app
 
 
@@ -62,6 +65,9 @@ class OpaqueSessionTests(unittest.TestCase):
 
 class PlaybackDescriptorTests(unittest.TestCase):
     def setUp(self):
+        # ここでは配信の仕組みだけを確かめる（認証は test_service_auth.py）。
+        app.dependency_overrides[require_service_user] = lambda: ServiceUser(subject="test", mod="video-player")
+        self.addCleanup(app.dependency_overrides.pop, require_service_user, None)
         self.client = TestClient(app)
 
     def test_vod_descriptor_defaults_to_same_origin_file_gateway(self):
@@ -72,14 +78,14 @@ class PlaybackDescriptorTests(unittest.TestCase):
         self.assertEqual(response.headers["cache-control"], "no-store")
         source = response.json()["source"]
         self.assertEqual(source["type"], "file")
-        self.assertRegex(source["url"], r"/stream/file/video/w3vt4U13QYM$")
+        self.assertRegex(source["url"], r"/stream/file/video/w3vt4U13QYM\?exp=\d+&sig=[0-9a-f]{64}$")
         self.assertNotIn("googlevideo", response.text)
 
         audio = self.client.get(
             "/resolve/w3vt4U13QYM?mode=video&presentation=audio"
         ).json()["source"]
         self.assertEqual(audio["type"], "file")
-        self.assertRegex(audio["url"], r"/stream/file/audio/w3vt4U13QYM$")
+        self.assertRegex(audio["url"], r"/stream/file/audio/w3vt4U13QYM\?exp=\d+&sig=[0-9a-f]{64}$")
 
     def test_vod_descriptor_only_contains_backend_url(self):
         sources = {

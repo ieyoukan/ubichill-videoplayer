@@ -1,18 +1,14 @@
-"""ライブストリーム配信（HLS最適化・TTL キャッシュ付き）。"""
+"""ライブ配信の URL 解決（TTL キャッシュ付き）。配信は /resolve が作る HLS セッション経由。"""
 
 from typing import Any, Dict
 
 import yt_dlp
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import HTTPException
 
 from ..cache import TTLCache
 from ..config import CACHE_LIVE_TTL, CACHE_MAX_SIZE
 from ..security import _validate_video_id
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
-from ..hls_gateway import create_stream
-
-router = APIRouter()
 
 _live_cache = TTLCache(max_size=CACHE_MAX_SIZE)
 _live_audio_cache = TTLCache(max_size=CACHE_MAX_SIZE)
@@ -89,17 +85,3 @@ async def resolve_live_url(video_id: str, audio_only: bool = False) -> str:
                     "message": f"配信エラー: {error_msg[:100]}",
                 },
             )
-
-
-@router.get("/live/{video_id}", deprecated=True)
-async def stream_live(video_id: str, request: Request):
-    """最大 720p のライブ HLS を配信する。"""
-    stream_id = create_stream(await resolve_live_url(video_id))
-    return RedirectResponse(request.url_for("stream_master", stream_id=stream_id), status_code=307)
-
-
-@router.get("/live-audio/{video_id}", deprecated=True)
-async def stream_live_audio(video_id: str, request: Request):
-    """ライブの音声専用 HLS を配信する。"""
-    stream_id = create_stream(await resolve_live_url(video_id, audio_only=True))
-    return RedirectResponse(request.url_for("stream_master", stream_id=stream_id), status_code=307)

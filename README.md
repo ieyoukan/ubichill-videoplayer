@@ -1,7 +1,8 @@
 # 🎬 Video Player Mod
 
 YouTube動画を backend 経由の opaque media gateway と Ubichill の正規メディアタイムラインで再生する mod。
-video-player v3 は Ubichill SDK 2.1.0 以上（mod protocol v3 対応 Host）を必要とします。
+video-player v3.1 は、サービストークン（`Ubi.identity`、mod protocol v5）に対応した Ubichill を必要とします。
+API サーバーは Ubichill にログインしている利用者からの依頼だけを受け付けます。
 
 ## ✨ 特徴
 
@@ -10,6 +11,7 @@ video-player v3 は Ubichill SDK 2.1.0 以上（mod protocol v3 対応 Host）�
 - **Server timeline**: 再生・停止・シークを revision 付き Server 時刻で同期
 - **単一 MediaState**: duration、buffering、ended、構造化 error を一つの状態通知で扱う
 - **権限を集約**: controls の `net:fetch` と screen の `media:control` を分離し、同一 backend domain を共有許可
+- **Ubichill の利用者だけが使える**: API はサービストークン（短命の JWT）を確かめ、利用者（サービスごとの仮名）ごとに回数を制限する。再生 URL は `/resolve` が発行する短命の署名付き URL のみ
 
 ## 📦 構成
 
@@ -51,19 +53,21 @@ docker-compose -f docker-compose.cache.yml up -d
 
 ## 🎯 API エンドポイント
 
-| Method | Path | 説明 |
-|--------|------|------|
-| GET | `/search?q={query}` | 動画検索 |
-| GET | `/info/{video_id}` | 動画情報取得 |
-| GET | `/resolve/{video_id}` | 同一originの安全な再生descriptorを即時発行 |
-| GET | `/stream/file/video/{video_id}` | 通常動画のRange gateway |
-| GET | `/stream/file/audio/{video_id}` | 通常動画の音声Range gateway |
-| GET | `/stream/{stream_id}/master.m3u8` | live・明示HLS用の短寿命manifest |
-| GET | `/stream/{stream_id}/resource/{token}/{opaque_name}` | URL非公開のHLS resource gateway |
-| GET | `/video/{video_id}` | 通常動画（deprecated互換API） |
-| GET | `/audio/{video_id}` | 通常動画の音声（deprecated互換API） |
-| GET | `/live/{video_id}` | ライブ配信（deprecated互換API） |
-| GET | `/live-audio/{video_id}` | ライブ音声（deprecated互換API） |
+| Method | Path | 認証 | 説明 |
+|--------|------|------|------|
+| GET | `/search?q={query}` | トークン | 動画検索 |
+| GET | `/info/{video_id}` | トークン | 動画情報取得 |
+| GET | `/resolve/{video_id}` | トークン | 同一originの安全な再生descriptorを即時発行（再生 URL に署名を付ける） |
+| GET | `/stream/file/video/{video_id}?exp&sig` | 署名 | 通常動画のRange gateway |
+| GET | `/stream/file/audio/{video_id}?exp&sig` | 署名 | 通常動画の音声Range gateway |
+| GET | `/stream/{stream_id}/master.m3u8` | `/resolve` が作るセッション | live・明示HLS用の短寿命manifest |
+| GET | `/stream/{stream_id}/resource/{token}/{opaque_name}` | 同上 | URL非公開のHLS resource gateway |
+
+- トークン: `Authorization: Bearer <サービストークン>`。mod は `Ubi.identity.token(<API のオリジン>)` で受け取る。
+  検証の仕組みは Ubichill の [docs/SERVICE_TOKEN.md](https://github.com/ubichill/ubichill/blob/main/docs/SERVICE_TOKEN.md)。
+- 失敗: トークンが無い・通らない `401`、回数制限 `429`（`Retry-After`）、再生 URL の署名切れ `403`。
+- サムネイルは利用者のブラウザが `i.ytimg.com` から直接読む（API を通さない）。
+- 旧 API（`/video` `/audio` `/live` `/live-audio` `/thumbnail`）は誰でも使える中継になっていたため削除した。
 
 Google Video の署名付きURLはブラウザへ返しません。VODは同一originのRange gateway、live/HLSは短寿命opaque tokenを使い、上流redirectもallowlistでホップごとに検証します。
 
@@ -96,6 +100,13 @@ function App() {
 | `REDIS_URL` | redis://localhost:6379 | Redis接続URL |
 | `CACHE_TTL` | 3600 | キャッシュTTL（秒） |
 | `WORKERS` | 4 | Uvicornワーカー数 |
+| `REQUIRE_SERVICE_TOKEN` | true | false にすると誰でも使える（ローカル開発用のみ） |
+| `UBICHILL_ISSUERS` | （必須） | 信頼する Ubichill の公開オリジン（カンマ区切り）。例 `https://ubichill.com` |
+| `SERVICE_AUDIENCE` | （必須） | この API のオリジン。トークンの `aud` と一致しなければ拒否 |
+| `SERVICE_ALLOWED_MODS` | video-player | 受け付ける mod の ID |
+| `RATE_LIMIT_RESOLVE` / `RATE_LIMIT_SEARCH` / `RATE_LIMIT_INFO` | 30/600・20/60・60/60 | 利用者ごとの回数制限（回数/秒数） |
+| `MEDIA_URL_SECRET` | 起動ごとに生成 | 再生 URL の署名鍵（複数 replica・再起動をまたぐなら設定する） |
+| `MEDIA_URL_TTL` | 21600 | 再生 URL の有効期間（秒） |
 
 ### Docker Compose設定
 

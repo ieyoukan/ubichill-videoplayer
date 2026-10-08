@@ -1,0 +1,88 @@
+{
+  "id": "video-player",
+  "name": "video-player",
+  "version": "3.1.0",
+  "components": {
+    "video-player:controls": {
+      "watchEntityTypes": [
+        "video-player:controls"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 370,
+        "z": 198,
+        "w": 640,
+        "h": 60
+      },
+      "capabilities": [
+        "event:emit",
+        "identity:token",
+        "net:fetch",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./controls/index.b35c6438.js"
+    },
+    "video-player:playlist": {
+      "watchEntityTypes": [
+        "video-player:playlist"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "capabilities": [
+        "event:emit",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./playlist/index.b0f1079e.js"
+    },
+    "video-player:screen": {
+      "mediaTargets": [
+        "main"
+      ],
+      "watchEntityTypes": [],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 0,
+        "z": 2,
+        "w": 640,
+        "h": 360
+      },
+      "capabilities": [
+        "event:emit",
+        "media:control"
+      ],
+      "workerUrl": "./screen/index.3b6909d9.js"
+    },
+    "video-player:search": {
+      "watchEntityTypes": [],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 330,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "capabilities": [
+        "event:emit",
+        "identity:token",
+        "net:fetch",
+        "scene:read",
+        "ui:render"
+      ],
+      "workerUrl": "./search/index.a8720036.js"
+    }
+  },
+  "assets": []
+}

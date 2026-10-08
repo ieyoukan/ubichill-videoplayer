@@ -13,6 +13,9 @@ services:
       - UPSTREAM_SOURCE_ADDRESS=0.0.0.0
       - YTDLP_POT_PROVIDER_URL=http://pot-provider:4416
       - YTDLP_PLAYER_CLIENT=mweb
+      # ローカルの Ubichill（pnpm dev）が発行するサービストークンを確かめる。
+      - UBICHILL_ISSUERS=http://localhost:3001
+      - SERVICE_AUDIENCE=http://localhost:8000
     depends_on:
       - pot-provider
     volumes:
