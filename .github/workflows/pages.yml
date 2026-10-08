@@ -36,9 +36,12 @@ jobs:
       - name: Enable pnpm
         run: corepack enable
 
-      # npm 公開済みの SDK を lockfile で 2.1.0 に固定し、配信物を毎回ソースから再現する。
+      # npm 公開済みの SDK を lockfile で 3.1.0 に固定し、配信物を毎回ソースから再現する。
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Test mod API session
+        run: pnpm test
 
       - name: Build mod bundle
         run: pnpm build
