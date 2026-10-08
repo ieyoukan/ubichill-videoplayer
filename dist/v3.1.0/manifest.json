@@ -17,13 +17,12 @@
       },
       "capabilities": [
         "event:emit",
-        "identity:token",
         "net:fetch",
         "scene:read",
         "scene:update",
         "ui:render"
       ],
-      "workerUrl": "./controls/index.b35c6438.js"
+      "workerUrl": "./controls/index.de5e6bfd.js"
     },
     "video-player:playlist": {
       "watchEntityTypes": [
@@ -76,12 +75,11 @@
       },
       "capabilities": [
         "event:emit",
-        "identity:token",
         "net:fetch",
         "scene:read",
         "ui:render"
       ],
-      "workerUrl": "./search/index.a8720036.js"
+      "workerUrl": "./search/index.a920a8d0.js"
     }
   },
   "assets": []

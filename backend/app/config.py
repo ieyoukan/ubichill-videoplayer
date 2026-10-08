@@ -22,9 +22,7 @@ UPSTREAM_SOURCE_ADDRESS = os.getenv("UPSTREAM_SOURCE_ADDRESS", "0.0.0.0")
 # Kubernetes Ingress でのプレフィックス対応
 ROOT_PATH = os.getenv("ROOT_PATH", "")
 
-ALLOWED_ORIGINS = os.getenv(
-    "CORS_ORIGINS", "http://localhost:3000,http://localhost:3001"
-).split(",")
+ALLOWED_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 
 # ── キャッシュ設定 ───────────────────────────────
 # yt-dlp 呼び出しは高コスト（ネットワーク + リソース）なので、結果を TTL 付きで
@@ -34,15 +32,10 @@ CACHE_SEARCH_TTL = int(os.getenv("CACHE_SEARCH_TTL", "300"))  # 5分
 CACHE_INFO_TTL = int(os.getenv("CACHE_INFO_TTL", "3600"))  # 1時間
 CACHE_LIVE_TTL = int(os.getenv("CACHE_LIVE_TTL", "30"))  # 30秒
 
-# ── サービストークン（Ubichill からの依頼であることの確認） ──────────
-# 信頼する Ubichill の発行元（公開オリジン、カンマ区切り）。トークンの iss がこの中に無ければ拒否する。
-UBICHILL_ISSUERS = [
-    issuer.strip().rstrip("/")
-    for issuer in os.getenv("UBICHILL_ISSUERS", "").split(",")
-    if issuer.strip()
-]
-# このサービス自身のオリジン（トークンの aud と一致しなければ拒否する）。
-SERVICE_AUDIENCE = os.getenv("SERVICE_AUDIENCE", "").strip().rstrip("/")
+# ── mod 用の匿名利用トークン（このサービス自身が発行） ──────────
+SERVICE_AUDIENCE = os.getenv("SERVICE_AUDIENCE", "video-player-api").strip().rstrip("/")
+SERVICE_TOKEN_SECRET = os.getenv("SERVICE_TOKEN_SECRET") or secrets.token_urlsafe(32)
+SERVICE_TOKEN_TTL = 300
 # 受け付ける mod の ID（カンマ区切り）。
 SERVICE_ALLOWED_MODS = [
     mod.strip()
@@ -52,8 +45,9 @@ SERVICE_ALLOWED_MODS = [
 # false にすると誰でも使える（ローカル開発用）。本番では true のまま。
 REQUIRE_SERVICE_TOKEN = os.getenv("REQUIRE_SERVICE_TOKEN", "true").lower() == "true"
 
-# ── 利用者（トークンの sub）ごとの回数制限 ─────────────────────
+# ── 接続元 IP ごとの回数制限 ──────────────────────────────
 # 「回数/秒数」。YouTube への取得を伴うものほど厳しくする。
+RATE_LIMIT_SESSION = os.getenv("RATE_LIMIT_SESSION", "30/60")
 RATE_LIMIT_RESOLVE = os.getenv("RATE_LIMIT_RESOLVE", "30/600")
 RATE_LIMIT_SEARCH = os.getenv("RATE_LIMIT_SEARCH", "20/60")
 RATE_LIMIT_INFO = os.getenv("RATE_LIMIT_INFO", "60/60")
@@ -64,8 +58,5 @@ MEDIA_URL_SECRET = os.getenv("MEDIA_URL_SECRET") or secrets.token_urlsafe(32)
 # 再生 URL の有効期間（秒）。長い動画を最後まで再生できる長さにする。
 MEDIA_URL_TTL = int(os.getenv("MEDIA_URL_TTL", "21600"))
 
-if REQUIRE_SERVICE_TOKEN and (not UBICHILL_ISSUERS or not SERVICE_AUDIENCE):
-    raise RuntimeError(
-        "REQUIRE_SERVICE_TOKEN=true のときは UBICHILL_ISSUERS と SERVICE_AUDIENCE を設定してください"
-        "（ローカル開発で認証を外すなら REQUIRE_SERVICE_TOKEN=false）"
-    )
+if not SERVICE_AUDIENCE or len(SERVICE_TOKEN_SECRET.encode()) < 32:
+    raise RuntimeError("SERVICE_AUDIENCE は空にできません。SERVICE_TOKEN_SECRET は 32 バイト以上にしてください")

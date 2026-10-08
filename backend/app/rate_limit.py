@@ -1,4 +1,4 @@
-"""利用者（サービストークンの sub）ごとの回数制限。プロセス内のトークンバケット（replica 1 前提）。"""
+"""接続元 IP の仮名ごとの回数制限。プロセス内のトークンバケット（replica 1 前提）。"""
 
 import threading
 import time
@@ -21,7 +21,7 @@ def parse_rate(spec: str) -> tuple[int, float]:
 
 
 class RateLimiter:
-    """利用者ごとに capacity 回まで。window 秒で満タンに戻る（少しずつ回復する）。"""
+    """接続元ごとに capacity 回まで。window 秒で満タンに戻る（少しずつ回復する）。"""
 
     def __init__(self, capacity: int, window_seconds: float, *, max_keys: int = 10_000,
                  clock: Callable[[], float] = time.monotonic):
@@ -50,7 +50,7 @@ class RateLimiter:
 
 
 def rate_limited(limiter: RateLimiter):
-    """FastAPI の依存。サービストークンを確かめたうえで、その利用者の回数を数える。"""
+    """FastAPI の依存。利用トークンを確かめたうえで、その接続元の回数を数える。"""
 
     async def dependency(user: ServiceUser = Depends(require_service_user)) -> ServiceUser:
         wait = limiter.take(user.subject)

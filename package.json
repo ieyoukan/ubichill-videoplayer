@@ -19,6 +19,7 @@
     "scripts": {
         "typecheck": "tsc --noEmit",
         "build": "pnpm typecheck && pnpm exec ubichill build",
-        "verify": "node scripts/verify-dist.mjs"
+        "verify": "node scripts/verify-dist.mjs",
+        "test": "node --test src/lib/*.test.mjs"
     }
 }

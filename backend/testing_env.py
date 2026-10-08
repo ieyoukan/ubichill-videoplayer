@@ -2,6 +2,6 @@
 
 import os
 
-os.environ.setdefault("UBICHILL_ISSUERS", "https://ubichill.test")
 os.environ.setdefault("SERVICE_AUDIENCE", "https://videoplayer.test")
+os.environ.setdefault("SERVICE_TOKEN_SECRET", "test-service-secret-at-least-32-bytes")
 os.environ.setdefault("MEDIA_URL_SECRET", "test-media-secret")

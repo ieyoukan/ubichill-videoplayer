@@ -13,13 +13,13 @@ services:
       - UPSTREAM_SOURCE_ADDRESS=0.0.0.0
       - YTDLP_POT_PROVIDER_URL=http://pot-provider:4416
       - YTDLP_PLAYER_CLIENT=mweb
-      # ローカルの Ubichill（pnpm dev）が発行するサービストークンを確かめる。
-      - UBICHILL_ISSUERS=http://localhost:3001
+      # このサービス自身が mod 用の匿名利用トークンを発行する。
       - SERVICE_AUDIENCE=http://localhost:8000
     depends_on:
       - pot-provider
     volumes:
       - ./backend/main.py:/app/main.py
+      - ./backend/app:/app/app
     command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]

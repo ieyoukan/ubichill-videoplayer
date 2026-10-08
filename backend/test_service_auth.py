@@ -1,76 +1,74 @@
-import testing_env  # noqa: F401  app より先に環境変数を決める
+import testing_env  # noqa: F401
 
 import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
 import jwt
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
+from app.config import SERVICE_AUDIENCE, SERVICE_TOKEN_SECRET, SERVICE_TOKEN_TTL
 from app.media_url import media_signature_valid, sign_media
 from app.rate_limit import RateLimiter, parse_rate, search_limiter
-from app.service_auth import ServiceTokenError, require_service_user, verify_service_token
+from app.routers.session import session_limiter
+from app.service_auth import (
+    TOKEN_ISSUER, ServiceTokenError, issue_service_token, require_service_user,
+    service_subject, verify_service_token,
+)
 from main import app
 
-ISSUER = "https://ubichill.test"
-AUDIENCE = "https://videoplayer.test"
-KEY = Ed25519PrivateKey.generate()
+HOST = "198.51.100.1"
 
 
-def token(key=KEY, alg="EdDSA", **overrides) -> str:
+def token(secret=SERVICE_TOKEN_SECRET, **overrides) -> str:
     now = int(time.time())
-    claims = {"iss": ISSUER, "aud": AUDIENCE, "sub": "pseudonym-1", "mod": "video-player",
-              "iat": now, "exp": now + 300, "jti": "j", **overrides}
-    return jwt.encode(claims, key, algorithm=alg, headers={"kid": "k1"})
-
-
-def verify(raw: str, key_for=None):
-    return verify_service_token(
-        raw,
-        issuers=[ISSUER],
-        audience=AUDIENCE,
-        allowed_mods=["video-player"],
-        key_for=key_for or (lambda _issuer, _token: KEY.public_key()),
-    )
+    claims = {"iss": TOKEN_ISSUER, "aud": SERVICE_AUDIENCE,
+              "sub": service_subject(HOST), "mod": "video-player",
+              "iat": now, "exp": now + SERVICE_TOKEN_TTL, "jti": "j", **overrides}
+    return jwt.encode(claims, secret, algorithm="HS256")
 
 
 class VerifyServiceTokenTests(unittest.TestCase):
-    def test_accepts_valid_token_and_returns_pseudonym(self):
-        user = verify(token())
-        self.assertEqual((user.subject, user.mod), ("pseudonym-1", "video-player"))
-
-    def reason(self, raw: str, key_for=None) -> str:
+    def reason(self, raw: str) -> str:
         with self.assertRaises(ServiceTokenError) as ctx:
-            verify(raw, key_for)
+            verify_service_token(raw)
         return ctx.exception.reason
 
-    def test_rejects_token_for_other_service(self):
-        self.assertEqual(self.reason(token(aud="https://other.test")), "wrong-audience")
-
-    def test_untrusted_issuer_is_rejected_before_fetching_keys(self):
-        asked = []
-        reason = self.reason(token(iss="https://evil.test"), lambda issuer, _t: asked.append(issuer))
-        self.assertEqual(reason, "untrusted-issuer")
-        self.assertEqual(asked, [])
-
-    def test_rejects_signature_from_other_key(self):
-        self.assertEqual(self.reason(token(key=Ed25519PrivateKey.generate())), "bad-signature")
-
-    def test_rejects_expired_beyond_clock_skew(self):
+    def test_service_issued_token_is_valid_for_five_minutes(self):
         now = int(time.time())
-        self.assertEqual(self.reason(token(iat=now - 400, exp=now - 31)), "expired")
+        issued = issue_service_token(HOST, "video-player", now=now)
+        user = verify_service_token(issued["token"])
+        self.assertEqual((user.subject, user.mod), (service_subject(HOST), "video-player"))
+        self.assertEqual(issued["expiresAt"], (now + 300) * 1000)
+        self.assertNotIn(HOST, jwt.decode(issued["token"], options={"verify_signature": False})["sub"])
 
-    def test_rejects_other_mod(self):
+    def test_reissuing_for_same_ip_keeps_rate_limit_subject(self):
+        first = issue_service_token(HOST, "video-player")["token"]
+        second = issue_service_token(HOST, "video-player")["token"]
+        self.assertNotEqual(first, second)
+        self.assertEqual(verify_service_token(first).subject, verify_service_token(second).subject)
+        other = issue_service_token("198.51.100.2", "video-player")["token"]
+        self.assertNotEqual(verify_service_token(first).subject, verify_service_token(other).subject)
+
+    def test_rejects_token_for_other_service(self):
+        self.assertEqual(self.reason(token(aud="other-service")), "wrong-audience")
+
+    def test_rejects_signature_from_other_secret(self):
+        self.assertEqual(self.reason(token(secret="other-service-secret-at-least-32-bytes")), "bad-signature")
+
+    def test_rejects_expired_token_without_grace_period(self):
+        now = int(time.time())
+        self.assertEqual(self.reason(token(iat=now - 400, exp=now - 1)), "expired")
+
+    def test_rejects_other_mod_and_issuer(self):
         self.assertEqual(self.reason(token(mod="pen")), "mod-not-allowed")
+        self.assertEqual(self.reason(token(iss="https://arbitrary-ubichill.example")), "invalid")
 
-    def test_rejects_symmetric_algorithm(self):
-        # 公開鍵を HMAC の鍵として使わせる「alg 差し替え」を受け付けない。
-        self.assertEqual(self.reason(token(key="secret-secret-secret-secret-1234", alg="HS256")), "unsupported-algorithm")
-
-    def test_rejects_garbage(self):
-        self.assertEqual(self.reason("not.a.token"), "malformed")
+    def test_rejects_unsigned_token_and_garbage(self):
+        claims = jwt.decode(token(), options={"verify_signature": False})
+        self.assertEqual(self.reason(jwt.encode(claims, "", algorithm="none")), "invalid")
+        self.assertEqual(self.reason("not.a.token"), "invalid")
 
 
 class RateLimiterTests(unittest.TestCase):
@@ -119,14 +117,34 @@ class MediaUrlTests(unittest.TestCase):
 
 class RouteProtectionTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(app)
+        self.client = TestClient(app, client=(HOST, 5000))
         app.dependency_overrides.pop(require_service_user, None)
-        patcher = patch("app.service_auth._jwks_key", lambda _issuer, _token: KEY.public_key())
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        search_limiter._buckets.clear()
+        session_limiter._buckets.clear()
 
     def auth(self, raw=None):
         return {"authorization": f"Bearer {raw or token()}"}
+
+    def test_any_host_can_start_mod_session_without_login(self):
+        response = self.client.post("/session", json={"modId": "video-player"},
+                                    headers={"origin": "https://my-ubichill.example"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        user = verify_service_token(response.json()["token"])
+        self.assertEqual(user.mod, "video-player")
+        self.assertEqual(user.subject, service_subject(HOST))
+
+    def test_unknown_mod_and_invalid_id_cannot_start_session(self):
+        self.assertEqual(self.client.post("/session", json={"modId": "pen"}).status_code, 403)
+        for body in ({}, {"modId": "../video-player"}, {"modId": "x" * 129}):
+            self.assertEqual(self.client.post("/session", json=body).status_code, 422)
+
+    def test_session_issuance_is_rate_limited_by_ip(self):
+        while session_limiter.take(service_subject(HOST)) == 0:
+            pass
+        response = self.client.post("/session", json={"modId": "video-player"})
+        self.assertEqual(response.status_code, 429)
+        self.assertGreaterEqual(int(response.headers["retry-after"]), 1)
 
     def test_youtube_endpoints_require_service_token(self):
         for path in ("/search?q=a", "/info/w3vt4U13QYM", "/resolve/w3vt4U13QYM"):
@@ -135,42 +153,47 @@ class RouteProtectionTests(unittest.TestCase):
             self.assertEqual(response.headers.get("www-authenticate"), "Bearer")
 
     def test_invalid_token_reports_reason(self):
-        response = self.client.get("/resolve/w3vt4U13QYM", headers=self.auth(token(aud="https://other.test")))
+        response = self.client.get("/resolve/w3vt4U13QYM", headers=self.auth(token(aud="other-service")))
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"]["reason"], "wrong-audience")
 
-    def test_resolve_with_token_returns_signed_media_url_that_the_gateway_accepts(self):
-        response = self.client.get("/resolve/w3vt4U13QYM?mode=video&presentation=video", headers=self.auth())
+    def test_session_token_allows_resolve_and_signed_media_gateway(self):
+        raw = self.client.post("/session", json={"modId": "video-player"}).json()["token"]
+        response = self.client.get("/resolve/w3vt4U13QYM?mode=video&presentation=video", headers=self.auth(raw))
         self.assertEqual(response.status_code, 200)
-        url = response.json()["source"]["url"]
-        path = url.split("://", 1)[1].split("/", 1)[1]
+        path = response.json()["source"]["url"].split("://", 1)[1].split("/", 1)[1]
         with patch("app.routers.video._stream_media", AsyncMock(return_value=Response(b"ok"))):
             self.assertEqual(self.client.get(f"/{path}").status_code, 200)
-            unsigned = f"/{path.split('?')[0]}"
-            self.assertEqual(self.client.get(unsigned).status_code, 403)
+            self.assertEqual(self.client.get(f"/{path.split('?')[0]}").status_code, 403)
             tampered = f"/{path.replace('w3vt4U13QYM', 'dQw4w9WgXcQ')}"
             self.assertEqual(self.client.get(tampered).status_code, 403)
 
-    def test_rate_limit_per_user_returns_429_with_retry_after(self):
-        subject = "pseudonym-ratelimit"
-        while search_limiter.take(subject) == 0:
+    def test_reissuing_or_borrowing_token_does_not_reset_api_rate_limit(self):
+        while search_limiter.take(service_subject(HOST)) == 0:
             pass
-        response = self.client.get("/search?q=a", headers=self.auth(token(sub=subject)))
+        for source in (HOST, "198.51.100.2"):
+            raw = issue_service_token(source, "video-player")["token"]
+            response = self.client.get("/search?q=a", headers=self.auth(raw))
+            self.assertEqual(response.status_code, 429)
+            self.assertGreaterEqual(int(response.headers["retry-after"]), 1)
+
+    def test_forwarded_header_does_not_override_client_ip_in_app(self):
+        while search_limiter.take(service_subject(HOST)) == 0:
+            pass
+        response = self.client.get("/search?q=a", headers={**self.auth(), "x-forwarded-for": "198.51.100.99"})
         self.assertEqual(response.status_code, 429)
-        self.assertGreaterEqual(int(response.headers["retry-after"]), 1)
 
     def test_search_and_info_return_direct_thumbnail_urls(self):
         tracks = [{"id": "w3vt4U13QYM", "title": "t", "duration": 1, "author": "a"}]
         info = {"id": "w3vt4U13QYM", "title": "t", "duration": 1, "uploader": "a"}
         with patch("app.routers.search._run_ytdlp", AsyncMock(return_value=tracks)):
-            search = self.client.get("/search?q=unique-query-for-test", headers=self.auth(token(sub="thumb")))
+            search = self.client.get("/search?q=unique-query-for-test", headers=self.auth())
         with patch("app.routers.info._run_ytdlp", AsyncMock(return_value=info)):
-            detail = self.client.get("/info/w3vt4U13QYM", headers=self.auth(token(sub="thumb")))
+            detail = self.client.get("/info/w3vt4U13QYM", headers=self.auth())
         expected = "https://i.ytimg.com/vi/w3vt4U13QYM/hqdefault.jpg"
         self.assertEqual(search.status_code, 200)
         self.assertEqual(search.json()[0]["thumbnail"], expected)
         self.assertEqual(detail.json()["thumbnail"], expected)
-        self.assertNotIn("streamUrl", detail.json())
 
     def test_deprecated_public_endpoints_are_removed(self):
         for path in ("/video/w3vt4U13QYM", "/audio/w3vt4U13QYM", "/live/w3vt4U13QYM",

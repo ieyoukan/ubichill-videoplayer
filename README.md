@@ -1,8 +1,8 @@
 # 🎬 Video Player Mod
 
 YouTube動画を backend 経由の opaque media gateway と Ubichill の正規メディアタイムラインで再生する mod。
-video-player v3.1 は、サービストークン（`Ubi.identity`、mod protocol v5）に対応した Ubichill を必要とします。
-API サーバーは Ubichill にログインしている利用者からの依頼だけを受け付けます。
+video-player v3.1 は、サービス自身が発行する 5 分間の匿名利用トークンを使います。
+Ubichill へのログインや、Ubichill サーバーの発行元登録は不要です。
 
 ## ✨ 特徴
 
@@ -11,12 +11,12 @@ API サーバーは Ubichill にログインしている利用者からの依頼
 - **Server timeline**: 再生・停止・シークを revision 付き Server 時刻で同期
 - **単一 MediaState**: duration、buffering、ended、構造化 error を一つの状態通知で扱う
 - **権限を集約**: controls の `net:fetch` と screen の `media:control` を分離し、同一 backend domain を共有許可
-- **Ubichill の利用者だけが使える**: API はサービストークン（短命の JWT）を確かめ、利用者（サービスごとの仮名）ごとに回数を制限する。再生 URL は `/resolve` が発行する短命の署名付き URL のみ
+- **利用開始トークン必須**: API はサービス自身が発行した短命の JWT を確かめ、接続元 IP ごとに回数を制限する。再生 URL は `/resolve` が発行する短命の署名付き URL のみ
 
 ## 📦 構成
 
 ```text
-controls.worker ── Ubi.fetch(/resolve) ──> FastAPI + yt-dlp
+controls.worker ── /session → トークン付き Ubi.fetch(/resolve) ──> FastAPI + yt-dlp
        │                                      │
        └── typed VPEvents ──> screen.worker   └── opaque media gateway ──> YouTube
                                   │
@@ -55,6 +55,7 @@ docker-compose -f docker-compose.cache.yml up -d
 
 | Method | Path | 認証 | 説明 |
 |--------|------|------|------|
+| POST | `/session` | 不要・IP ごとの発行制限 | `{ "modId": "video-player" }` で利用開始トークンを取得 |
 | GET | `/search?q={query}` | トークン | 動画検索 |
 | GET | `/info/{video_id}` | トークン | 動画情報取得 |
 | GET | `/resolve/{video_id}` | トークン | 同一originの安全な再生descriptorを即時発行（再生 URL に署名を付ける） |
@@ -63,8 +64,8 @@ docker-compose -f docker-compose.cache.yml up -d
 | GET | `/stream/{stream_id}/master.m3u8` | `/resolve` が作るセッション | live・明示HLS用の短寿命manifest |
 | GET | `/stream/{stream_id}/resource/{token}/{opaque_name}` | 同上 | URL非公開のHLS resource gateway |
 
-- トークン: `Authorization: Bearer <サービストークン>`。mod は `Ubi.identity.token(<API のオリジン>)` で受け取る。
-  検証の仕組みは Ubichill の [docs/SERVICE_TOKEN.md](https://github.com/ubichill/ubichill/blob/main/docs/SERVICE_TOKEN.md)。
+- トークン: `Authorization: Bearer <利用トークン>`。mod はこの API の `POST /session` で受け取る。
+  5 分で失効し、mod 側で期限前に更新する。同時の発行依頼はまとめ、401 では 1 回だけ取り直す。
 - 失敗: トークンが無い・通らない `401`、回数制限 `429`（`Retry-After`）、再生 URL の署名切れ `403`。
 - サムネイルは利用者のブラウザが `i.ytimg.com` から直接読む（API を通さない）。
 - 旧 API（`/video` `/audio` `/live` `/live-audio` `/thumbnail`）は誰でも使える中継になっていたため削除した。
@@ -101,10 +102,11 @@ function App() {
 | `CACHE_TTL` | 3600 | キャッシュTTL（秒） |
 | `WORKERS` | 4 | Uvicornワーカー数 |
 | `REQUIRE_SERVICE_TOKEN` | true | false にすると誰でも使える（ローカル開発用のみ） |
-| `UBICHILL_ISSUERS` | （必須） | 信頼する Ubichill の公開オリジン（カンマ区切り）。例 `https://ubichill.com` |
-| `SERVICE_AUDIENCE` | （必須） | この API のオリジン。トークンの `aud` と一致しなければ拒否 |
+| `SERVICE_AUDIENCE` | video-player-api | 利用トークンの宛先。サービスごとの固定値、または公開オリジン |
+| `SERVICE_TOKEN_SECRET` | 起動ごとに生成 | このサービスの JWT 署名鍵（32 バイト以上）。秘密鍵は mod に渡さない |
+| `RATE_LIMIT_SESSION` | 30/60 | 接続元 IP ごとのトークン発行制限（回数/秒数） |
 | `SERVICE_ALLOWED_MODS` | video-player | 受け付ける mod の ID |
-| `RATE_LIMIT_RESOLVE` / `RATE_LIMIT_SEARCH` / `RATE_LIMIT_INFO` | 30/600・20/60・60/60 | 利用者ごとの回数制限（回数/秒数） |
+| `RATE_LIMIT_RESOLVE` / `RATE_LIMIT_SEARCH` / `RATE_LIMIT_INFO` | 30/600・20/60・60/60 | 接続元 IP ごとの回数制限（回数/秒数） |
 | `MEDIA_URL_SECRET` | 起動ごとに生成 | 再生 URL の署名鍵（複数 replica・再起動をまたぐなら設定する） |
 | `MEDIA_URL_TTL` | 21600 | 再生 URL の有効期間（秒） |
 
@@ -148,6 +150,12 @@ services:
 詳細は [DEPLOYMENT.md#スケーラビリティ](./DEPLOYMENT.md#-スケーラビリティ) 参照
 
 ## 🔒 セキュリティ
+
+- mod ID は自己申告。この方式は対応する利用開始手順を必須にするもので、実際に mod のコードが動いた証明ではない。手順を再現する専用クライアントは作れる。
+- API の回数制限はトークンの ID ではなく接続元 IP を基準にする。トークンの再発行や他の接続元からのトークンの借用では上限をリセットできない。同じ NAT 配下の利用者は上限を共有する。
+- ログイン、計算チャレンジ、コードの暗号化は利用開始の条件に含めない。
+- 署名鍵が未設定なら再起動時にトークンが失効するが、mod は 401 で取り直す。複数プロセス・replica では署名鍵と回数制限の状態を共有する必要がある。
+- 本番は信頼する Ingress 経由でのみ backend に接続させ、接続元 IP が正しく渡るようにする。直接公開する場合は Uvicorn の `FORWARDED_ALLOW_IPS` を信頼するプロキシに限定する。
 
 - ✅ 非rootユーザーで実行
 - ✅ 最小限の権限

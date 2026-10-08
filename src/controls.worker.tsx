@@ -14,8 +14,7 @@ export const config: ComponentConfig = {
     watchEntityTypes: ['video-player:controls'],
     watchScope: 'entity',
     defaultTransform: { x: 0, y: 370, z: 198, w: 640, h: 60 },
-    // identity:token は API サーバーへの身元証明（Ubi.identity を型の外から呼ぶので自動検出されない）。
-    capabilities: ['event:emit', 'identity:token', 'net:fetch', 'scene:read', 'scene:update', 'ui:render'],
+    capabilities: ['event:emit', 'net:fetch', 'scene:read', 'scene:update', 'ui:render'],
 };
 
 import {

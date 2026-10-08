@@ -1,14 +1,13 @@
 {
   "id": "video-player",
   "version": "3.1.0",
-  "manifestIntegrity": "sha256-4OF/9YbM5Y2EORc8lMhyWbvbcKFUIWaIomQanJ/lGDc=",
+  "manifestIntegrity": "sha256-zwZzXgD04B6GRxHNhK5mu1HBvNvsYijhs/DIXt/RCP4=",
   "components": {
     "video-player:controls": {
-      "workerUrl": "./controls/index.b35c6438.js",
-      "integrity": "sha256-s1xkOKpdx4T2VMiDcwY75nrQ5EVwqxBH3AfdWheZPDk=",
+      "workerUrl": "./controls/index.de5e6bfd.js",
+      "integrity": "sha256-3l5r/UWSP6xyUg27YVLQ95rT6NSf6g+nK7939dq+0Gk=",
       "capabilities": [
         "event:emit",
-        "identity:token",
         "net:fetch",
         "scene:read",
         "scene:update",
@@ -34,11 +33,10 @@
       ]
     },
     "video-player:search": {
-      "workerUrl": "./search/index.a8720036.js",
-      "integrity": "sha256-qHIANj2KWvwJs1Venfr5/A1xlxFZ/5F5SFZgippE63A=",
+      "workerUrl": "./search/index.a920a8d0.js",
+      "integrity": "sha256-qSCo0MI5VdB7ddo6uU0nKok8vIecqUNubDM0DBH0PTU=",
       "capabilities": [
         "event:emit",
-        "identity:token",
         "net:fetch",
         "scene:read",
         "ui:render"

@@ -77,6 +77,9 @@ autoscaling:
 env:
   ROOT_PATH: ""
   CORS_ORIGINS: "*"
+  # ClusterIP の backend を信頼する Ingress 経由でのみ公開する。
+  # 直接公開する場合は信頼するプロキシの IP / CIDR に限定する。
+  FORWARDED_ALLOW_IPS: "*"
   LOG_LEVEL: "info"
   HTTPX_LOG_LEVEL: "warning"
   # yt-dlp 同時実行制御
@@ -91,16 +94,16 @@ env:
   CACHE_SEARCH_TTL: "300"
   CACHE_INFO_TTL: "3600"
   CACHE_LIVE_TTL: "30"
-  # Ubichill のサービストークンを確かめる。信頼する Ubichill（カンマ区切り）とこのサービスのオリジン。
-  # プレビュー（https://pr-<番号>.ubichill.com）から使うときはその発行元も足す。
+  # このサービス自身が mod 用の匿名利用トークンを発行する（ログイン・発行元登録は不要）。
   REQUIRE_SERVICE_TOKEN: "true"
-  UBICHILL_ISSUERS: "https://ubichill.com"
   SERVICE_AUDIENCE: "https://videoplayer.youkan.uk"
   SERVICE_ALLOWED_MODS: "video-player"
-  # 利用者ごとの回数制限（回数/秒数）
+  # 接続元 IP ごとの回数制限（回数/秒数）
+  RATE_LIMIT_SESSION: "30/60"
   RATE_LIMIT_RESOLVE: "30/600"
   RATE_LIMIT_SEARCH: "20/60"
   RATE_LIMIT_INFO: "60/60"
+  # トークンの署名鍵 SERVICE_TOKEN_SECRET は未設定なら起動ごとに生成する（replica 1 前提）。
   # 再生 URL の有効期間（秒）。署名の鍵 MEDIA_URL_SECRET は未設定なら起動ごとに作る（replica 1 前提）。
   MEDIA_URL_TTL: "21600"
 

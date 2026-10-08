@@ -13,8 +13,7 @@ export const config: ComponentConfig = {
     watchEntityTypes: [],
     watchScope: 'entity',
     defaultTransform: { x: 330, y: 440, z: 198, w: 310, h: 300 },
-    // identity:token は API サーバーへの身元証明（Ubi.identity を型の外から呼ぶので自動検出されない）。
-    capabilities: ['event:emit', 'identity:token', 'net:fetch', 'scene:read', 'ui:render'],
+    capabilities: ['event:emit', 'net:fetch', 'scene:read', 'ui:render'],
 };
 
 import { formatTime } from './lib/playback';
