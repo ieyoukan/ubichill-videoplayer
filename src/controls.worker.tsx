@@ -7,7 +7,7 @@
  * Worker 間通信は VPEvents (型付き) のみ。
  */
 
-import type { ComponentConfig, MediaSource, MediaState, RpcNetworkFetchResult } from 'ubichill';
+import type { ComponentConfig, MediaSource, MediaState } from 'ubichill';
 import { VPEvents, VPTarget } from './events';
 
 export const config: ComponentConfig = {
@@ -33,6 +33,7 @@ import {
     VolumeMuteIcon,
 } from './icons';
 import { formatTime } from './lib/playback';
+import { errorMessageOf, serviceFetch } from './lib/serviceApi';
 import { extractVideoId, thumbnailUrl } from './lib/youtube';
 import type { LoopMode, Track } from './types';
 
@@ -78,10 +79,13 @@ interface PlaybackDescriptor {
     source: MediaSource;
 }
 
-function resolveTrackUrl(track: Track): string {
-    const base = state.local.apiBase.trim() || DEFAULT_API_BASE;
+function apiBase(): string {
+    return state.local.apiBase.trim().replace(/\/$/, '') || DEFAULT_API_BASE;
+}
+
+function resolvePath(track: Track): string {
     const presentation = state.local.audioOnly ? 'audio' : 'video';
-    return `${base}/resolve/${extractVideoId(track.id)}?mode=${track.mode}&presentation=${presentation}`;
+    return `/resolve/${extractVideoId(track.id)}?mode=${track.mode}&presentation=${presentation}`;
 }
 
 function mediaIdFor(track: Track): string {
@@ -99,12 +103,12 @@ async function loadCurrentTrack(): Promise<void> {
         state.local.errorMessage = '';
     });
     try {
-        const resolveUrl = resolveTrackUrl(track);
-        const response = (await Ubi.fetch(resolveUrl)) as RpcNetworkFetchResult;
+        const base = apiBase();
+        const response = await serviceFetch(base, resolvePath(track));
         if (revision !== loadRequestRevision || state.local.currentTrack?.id !== track.id) return;
         if (!response.ok) throw new Error('resolve request failed');
         const descriptor = JSON.parse(response.body) as PlaybackDescriptor;
-        const expectedOrigin = new URL(resolveUrl).origin;
+        const expectedOrigin = new URL(base).origin;
         const sourceOrigin = new URL(descriptor.source.url).origin;
         const sourceType = descriptor.source.type;
         if (
@@ -122,11 +126,11 @@ async function loadCurrentTrack(): Promise<void> {
             },
             VPTarget.screen,
         );
-    } catch {
+    } catch (error) {
         if (revision !== loadRequestRevision || state.local.currentTrack?.id !== track.id) return;
         state.batch(() => {
             state.local.isLoading = false;
-            state.local.errorMessage = '再生URLを解決できませんでした';
+            state.local.errorMessage = errorMessageOf(error, '再生URLを解決できませんでした');
         });
     }
 }
@@ -169,7 +173,7 @@ state.onChange('myVolume', (v) => {
 export default function ControlsView() {
     const track = state.local.currentTrack;
     const media = state.local.mediaState;
-    const thumb = track ? thumbnailUrl(track.id, state.local.apiBase) : '';
+    const thumb = track ? thumbnailUrl(track.id) : '';
     const ct = currentTime();
     const duration = media?.duration ?? 0;
     const progress = duration > 0 ? (ct / duration) * 100 : 0;

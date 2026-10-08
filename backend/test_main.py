@@ -1,10 +1,17 @@
+import testing_env  # noqa: F401  app より先に環境変数を決める
+
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, Request
 
+from app.media_url import sign_media
 from app.routers import video as video_router
 from app.ytdlp_client import YTDLPError, _base_ydl_opts
+
+
+SIGNED_VIDEO = sign_media("video", "w3vt4U13QYM")
+SIGNED_AUDIO = sign_media("audio", "w3vt4U13QYM")
 
 
 class FakeUpstream:
@@ -82,7 +89,7 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(video_router, "_safe_get", AsyncMock(return_value=success)),
             patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
-            response = await video_router.stream_audio("w3vt4U13QYM", make_request())
+            response = await video_router.stream_file_audio("w3vt4U13QYM", make_request(), **SIGNED_AUDIO)
 
         resolve.assert_awaited_once_with("w3vt4U13QYM")
         self.assertEqual(response.headers["content-type"], "audio/mp4")
@@ -105,7 +112,7 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(video_router.time, "time", return_value=100.9),
             patch.object(video_router.asyncio, "sleep", AsyncMock()) as sleep,
         ):
-            response = await video_router.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_file_video("w3vt4U13QYM", make_request(), **SIGNED_VIDEO)
 
         sleep.assert_awaited_once_with(5)
         self.assertEqual(response.status_code, 206)
@@ -135,7 +142,7 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(video_router._video_url_cache, "delete") as cache_delete,
             patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
-            response = await video_router.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_file_video("w3vt4U13QYM", make_request(), **SIGNED_VIDEO)
 
         self.assertEqual(response.status_code, 206)
         self.assertEqual(await consume(response), b"video")
@@ -168,7 +175,7 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(video_router._video_url_cache, "delete") as cache_delete,
             patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
-            response = await video_router.stream_video("w3vt4U13QYM", make_request())
+            response = await video_router.stream_file_video("w3vt4U13QYM", make_request(), **SIGNED_VIDEO)
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(await consume(response), b"")
@@ -196,7 +203,7 @@ class StreamVideoRetryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(video_router.httpx, "AsyncClient", return_value=client),
         ):
             with self.assertRaises(HTTPException) as raised:
-                await video_router.stream_video("w3vt4U13QYM", make_request())
+                await video_router.stream_file_video("w3vt4U13QYM", make_request(), **SIGNED_VIDEO)
 
         self.assertEqual(raised.exception.status_code, 502)
         self.assertEqual(rejected.close_count, 1)

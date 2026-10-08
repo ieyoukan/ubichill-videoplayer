@@ -3,17 +3,20 @@
 import re
 from collections.abc import AsyncIterator
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import httpx
 import yt_dlp
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..config import UPSTREAM_SOURCE_ADDRESS
 from ..hls_gateway import StreamSession, create_stream, get_stream
 from ..manifest import _rewrite_manifest_urls
+from ..media_url import sign_media
+from ..rate_limit import rate_limited, resolve_limiter
 from ..security import _is_safe_proxy_url, _safe_get, _validate_video_id
+from ..service_auth import ServiceUser
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
 from .live import resolve_live_url
 
@@ -184,18 +187,19 @@ async def resolve_playback(
     mode: Literal["video", "live"] = "video",
     presentation: Literal["audio", "video"] = "video",
     delivery: Literal["auto", "file", "hls"] = "auto",
+    _user: ServiceUser = Depends(rate_limited(resolve_limiter)),
 ):
     _validate_video_id(video_id)
     media_id = f"youtube:{mode}:{presentation}:{video_id}"
     if mode == "video" and delivery != "hls":
-        route_name = (
-            "stream_file_audio" if presentation == "audio" else "stream_file_video"
-        )
+        kind = "audio" if presentation == "audio" else "video"
+        # <video> はヘッダーを送れないので、URL に短命の署名を付ける（署名の無い取得は受け付けない）。
+        signed_url = f"{request.url_for(f'stream_file_{kind}', video_id=video_id)}?{urlencode(sign_media(kind, video_id))}"
         return JSONResponse(
             {
                 "source": {
                     "id": media_id,
-                    "url": str(request.url_for(route_name, video_id=video_id)),
+                    "url": signed_url,
                     "type": "file",
                 }
             },

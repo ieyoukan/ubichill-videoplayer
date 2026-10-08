@@ -3,11 +3,14 @@
 from typing import Any, Dict
 
 import yt_dlp
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..cache import TTLCache
 from ..config import CACHE_INFO_TTL, CACHE_MAX_SIZE
+from ..media_url import thumbnail_url
+from ..rate_limit import info_limiter, rate_limited
 from ..security import _validate_video_id
+from ..service_auth import ServiceUser
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
 
 router = APIRouter()
@@ -22,17 +25,16 @@ def _yt_info(video_id: str) -> dict:
 
 
 @router.get("/info/{video_id}")
-async def get_video_info(video_id: str, request: Request):
+async def get_video_info(
+    video_id: str,
+    _user: ServiceUser = Depends(rate_limited(info_limiter)),
+):
     """動画情報を取得（TTL キャッシュ付き）"""
     _validate_video_id(video_id)
     cache_key = f"info:{video_id}"
     cached = _info_cache.get(cache_key)
     if cached is not None:
-        return {
-            **cached,
-            "thumbnail": str(request.url_for("get_thumbnail", video_id=video_id)),
-            "streamUrl": str(request.url_for("stream_video", video_id=video_id)),
-        }
+        return {**cached, "thumbnail": thumbnail_url(video_id)}
     try:
         info = await _run_ytdlp(_yt_info, video_id)
         result = {
@@ -42,11 +44,7 @@ async def get_video_info(video_id: str, request: Request):
             "author": info.get("uploader", "Unknown"),
         }
         _info_cache.set(cache_key, result, CACHE_INFO_TTL)
-        return {
-            **result,
-            "thumbnail": str(request.url_for("get_thumbnail", video_id=video_id)),
-            "streamUrl": str(request.url_for("stream_video", video_id=video_id)),
-        }
+        return {**result, "thumbnail": thumbnail_url(video_id)}
     except YTDLPError as e:
         raise HTTPException(status_code=e.status_code, detail={"error": e.kind, "message": str(e)})
     except HTTPException:

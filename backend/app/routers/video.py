@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 
 from ..cache import TTLCache
 from ..config import CACHE_MAX_SIZE, UPSTREAM_SOURCE_ADDRESS, logger
+from ..media_url import media_signature_valid
 from ..security import _is_safe_proxy_url, _safe_get, _validate_video_id
 from ..ytdlp_client import YTDLPError, _base_ydl_opts, _run_ytdlp
 
@@ -357,25 +358,27 @@ async def _stream_media(video_id: str, request: Request, resolver, url_cache):
             )
 
 
+def _require_media_signature(kind: str, video_id: str, exp: Optional[str], sig: Optional[str]) -> None:
+    if not media_signature_valid(kind, video_id, exp, sig):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "MEDIA_URL_INVALID", "message": "再生 URL の期限が切れたか、署名が正しくありません"},
+        )
+
+
 @router.get("/stream/file/video/{video_id}", name="stream_file_video")
-async def stream_file_video(video_id: str, request: Request):
-    """通常動画を同一originのRange gatewayとして配信する。"""
+async def stream_file_video(
+    video_id: str, request: Request, exp: Optional[str] = None, sig: Optional[str] = None
+):
+    """通常動画を同一originのRange gatewayとして配信する（/resolve が署名した URL のみ）。"""
+    _require_media_signature("video", video_id, exp, sig)
     return await _stream_media(video_id, request, _resolve_video_url, _video_url_cache)
 
 
 @router.get("/stream/file/audio/{video_id}", name="stream_file_audio")
-async def stream_file_audio(video_id: str, request: Request):
-    """通常動画の音声を同一originのRange gatewayとして配信する。"""
-    return await _stream_media(video_id, request, _resolve_audio_url, _audio_url_cache)
-
-
-@router.get("/video/{video_id}", name="stream_video", deprecated=True)
-async def stream_video(video_id: str, request: Request):
-    """最大 720p の通常動画を Range プロキシする。"""
-    return await _stream_media(video_id, request, _resolve_video_url, _video_url_cache)
-
-
-@router.get("/audio/{video_id}", deprecated=True)
-async def stream_audio(video_id: str, request: Request):
-    """再エンコードせず、YouTube の音声専用ストリームを Range プロキシする。"""
+async def stream_file_audio(
+    video_id: str, request: Request, exp: Optional[str] = None, sig: Optional[str] = None
+):
+    """通常動画の音声を同一originのRange gatewayとして配信する（/resolve が署名した URL のみ）。"""
+    _require_media_signature("audio", video_id, exp, sig)
     return await _stream_media(video_id, request, _resolve_audio_url, _audio_url_cache)

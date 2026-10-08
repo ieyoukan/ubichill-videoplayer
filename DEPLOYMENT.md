@@ -298,3 +298,18 @@ jobs:
 - [yt-dlp Documentation](https://github.com/yt-dlp/yt-dlp)
 - [Kubernetes HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
 - [Docker Compose Production](https://docs.docker.com/compose/production/)
+
+## mod 用の匿名利用トークン
+
+`POST /session` に `{ "modId": "video-player" }` を送ると、サービス自身が 5 分間の利用トークンを発行します。
+`/search`・`/info`・`/resolve` は `Authorization: Bearer <token>` が必須です。Ubichill の発行元登録やログインは不要です。
+
+- `SERVICE_TOKEN_SECRET`: JWT の署名鍵（32 バイト以上）。未設定なら起動ごとに生成。鍵を変更すると発行済みトークンは失効し、mod は再取得します。
+- `SERVICE_AUDIENCE`: トークンの宛先。既定は `video-player-api`。
+- `SERVICE_ALLOWED_MODS`: 受け付ける mod ID。既定は `video-player`。
+- `RATE_LIMIT_SESSION`: 接続元 IP ごとの発行制限。既定は `30/60`（30 回 / 60 秒）。API の既存の制限も IP ごとに適用します。
+
+現在の配信セッションと回数制限は process 内で保持するため、single worker / 1 replica で運用します。
+トークンは mod の実行証明ではなく、利用開始手順を通ったことの確認です。手順を再現する API クライアントは作れます。
+Ingress 経由でのみ backend を公開し、接続元 IP を正しく渡してください。直接公開する場合は
+`FORWARDED_ALLOW_IPS` を信頼するプロキシに限定し、利用者が任意の IP を申告できないようにします。

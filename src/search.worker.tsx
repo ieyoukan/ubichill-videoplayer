@@ -5,7 +5,7 @@
  * 検索クエリ / 結果 / 入力中フラグはローカル状態。
  */
 
-import type { ComponentConfig, RpcNetworkFetchResult } from 'ubichill';
+import type { ComponentConfig } from 'ubichill';
 import { VPEvents, VPTarget } from './events';
 import { SearchIcon, VideoIcon } from './icons';
 
@@ -17,6 +17,7 @@ export const config: ComponentConfig = {
 };
 
 import { formatTime } from './lib/playback';
+import { errorMessageOf, serviceFetch } from './lib/serviceApi';
 import { parseVideoId, thumbnailUrl } from './lib/youtube';
 import type { SearchResult, Track } from './types';
 
@@ -29,13 +30,14 @@ const state = Ubi.state.define({
     searchQuery: '',
     searchResults: [] as SearchResult[],
     isSearching: false,
+    errorMessage: '',
 });
 
 const emitAddTrack = (track: Track): void => {
     VPEvents.emit('vp:track:add', { track }, VPTarget.playlist);
 };
 
-const apiBase = (): string => state.local.apiBase.trim() || DEFAULT_API_BASE;
+const apiBase = (): string => state.local.apiBase.trim().replace(/\/$/, '') || DEFAULT_API_BASE;
 
 // ── アクション（state 代入だけで自動再描画される。手動 render() 呼び出しは不要） ──
 const setMode = (m: 'live' | 'video'): void => {
@@ -53,35 +55,54 @@ const setQuery = (v: string): void => {
 const addFromUrl = async (): Promise<void> => {
     const videoId = parseVideoId(state.local.urlInput);
     if (!videoId) return;
-    state.local.isSearching = true;
-    const res = (await Ubi.fetch(`${apiBase()}/info/${videoId}`)) as RpcNetworkFetchResult;
-    const info = res.ok ? (JSON.parse(res.body) as { title?: string; thumbnail?: string; duration?: number }) : {};
+    state.batch(() => {
+        state.local.isSearching = true;
+        state.local.errorMessage = '';
+    });
+    // タイトルが取れなくても、URL のままトラックは追加する。
+    const info = await serviceFetch(apiBase(), `/info/${videoId}`)
+        .then((res) => (res.ok ? (JSON.parse(res.body) as { title?: string; duration?: number }) : {}))
+        .catch((error: unknown) => {
+            state.local.errorMessage = errorMessageOf(error, 'タイトルを取得できませんでした');
+            return {} as { title?: string; duration?: number };
+        });
     emitAddTrack({
         id: videoId,
         title: info.title ?? state.local.urlInput,
-        thumbnail: info.thumbnail ?? thumbnailUrl(videoId, apiBase()),
+        thumbnail: thumbnailUrl(videoId),
         duration: info.duration ?? 0,
         mode: state.local.selectedMode,
     });
-    state.local.urlInput = '';
-    state.local.isSearching = false;
+    state.batch(() => {
+        state.local.urlInput = '';
+        state.local.isSearching = false;
+    });
 };
 
 const doSearch = async (): Promise<void> => {
     if (!state.local.searchQuery.trim()) return;
-    state.local.isSearching = true;
-    const res = (await Ubi.fetch(
-        `${apiBase()}/search?q=${encodeURIComponent(state.local.searchQuery)}&limit=10`,
-    )) as RpcNetworkFetchResult;
-    state.local.searchResults = res.ok ? (JSON.parse(res.body) as SearchResult[]) : [];
-    state.local.isSearching = false;
+    state.batch(() => {
+        state.local.isSearching = true;
+        state.local.errorMessage = '';
+    });
+    try {
+        const res = await serviceFetch(apiBase(), `/search?q=${encodeURIComponent(state.local.searchQuery)}&limit=10`);
+        state.local.searchResults = res.ok ? (JSON.parse(res.body) as SearchResult[]) : [];
+    } catch (error) {
+        state.batch(() => {
+            state.local.searchResults = [];
+            state.local.errorMessage = errorMessageOf(error, '検索できませんでした');
+        });
+    } finally {
+        state.local.isSearching = false;
+    }
 };
 
 const addResult = (r: SearchResult): void => {
     emitAddTrack({
         id: r.id,
         title: r.title,
-        thumbnail: thumbnailUrl(r.id, apiBase()),
+        thumbnail: thumbnailUrl(r.id),
         duration: r.duration,
         mode: state.local.selectedMode,
     });
@@ -89,7 +110,7 @@ const addResult = (r: SearchResult): void => {
 
 // ── レンダリング（自動追跡: 読んだキーが変わると自動再描画） ─────
 export default function SearchView() {
-    const { selectedMode, urlInput, searchQuery, searchResults, isSearching } = state.local;
+    const { selectedMode, urlInput, searchQuery, searchResults, isSearching, errorMessage } = state.local;
 
     return (
         <div
@@ -256,7 +277,7 @@ export default function SearchView() {
                             color: 'rgba(255,255,255,0.5)',
                         }}
                     >
-                        {isSearching ? 'Searching...' : 'No results'}
+                        {isSearching ? 'Searching...' : errorMessage || 'No results'}
                     </div>
                 ) : (
                     searchResults.map((r) => (
@@ -272,7 +293,7 @@ export default function SearchView() {
                             }}
                         >
                             <img
-                                src={r.thumbnail}
+                                src={thumbnailUrl(r.id)}
                                 alt=""
                                 loading="lazy"
                                 decoding="async"
