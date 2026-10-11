@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "alg": "ed25519",
+  "kind": "mod",
+  "publicKey": "RV6x-UsjPIm4bS9tsJm7Hmsmbk4dCJeQRVjql7903Gs",
+  "name": "video-player",
+  "modVersion": "2.0.0",
+  "contentHash": "sha256-3mkBPEH991Y5vddYJIGUUGePFCG9OBy9+1qYys4pfMU=",
+  "author": "youkan@ubichill.com",
+  "signature": "7SCg24JZaskQsk2O93SKgFp34OTBQQTCUBR9Pm6KZk3-FQr5HPbSovdJL19EULQCI3kytfh8zm75P2PBD8H4Cw"
+}
