@@ -77,6 +77,21 @@ jobs:
             echo "⚠️  dist/index.json が無い（ubichill CLI が古い可能性）。スキップ"
           fi
 
+      # Host は作者アカウントの署名（v<版>/lock.sig.json）を確認できた mod だけを実行する（ubichill#87）。
+      # 公開済みの過去の版も含めて署名する（ワールドが過去の版を固定していても動くように）。
+      # 署名は配布物の中身を変えないので、ワールドの lock はそのまま使える。
+      # ビルドに使う SDK（lockfile で固定）は変えず、署名だけ新しい CLI で行う。
+      - name: Sign mod bundle
+        env:
+          UBICHILL_CREDENTIALS: ${{ secrets.UBICHILL_CREDENTIALS }}
+        run: |
+          if [ -z "$UBICHILL_CREDENTIALS" ]; then
+            echo "::error::Secret UBICHILL_CREDENTIALS がありません。'ubichill ci create --name=\"GitHub Actions: ieyoukan/ubichill-videoplayer\"' を実行して設定してください。"
+            exit 1
+          fi
+          npx --yes ubichill@3.2.0 publish /tmp/gh-pages/video-player
+          npx --yes ubichill@3.2.0 verify --dist-dir=/tmp/gh-pages/video-player --require-signatures
+
       - name: Commit and push to gh-pages
         working-directory: /tmp/gh-pages
         run: |
