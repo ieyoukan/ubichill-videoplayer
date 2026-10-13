@@ -89,8 +89,8 @@ jobs:
             echo "::error::Secret UBICHILL_CREDENTIALS がありません。'ubichill ci create --name=\"GitHub Actions: ieyoukan/ubichill-videoplayer\"' を実行して設定してください。"
             exit 1
           fi
-          npx --yes ubichill@3.2.0 publish /tmp/gh-pages/video-player
-          npx --yes ubichill@3.2.0 verify --dist-dir=/tmp/gh-pages/video-player --require-signatures
+          npx --yes ubichill@3.3.0 publish /tmp/gh-pages/video-player
+          npx --yes ubichill@3.3.0 verify --dist-dir=/tmp/gh-pages/video-player --require-signatures
 
       - name: Commit and push to gh-pages
         working-directory: /tmp/gh-pages
