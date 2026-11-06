@@ -36,7 +36,7 @@ jobs:
       - name: Enable pnpm
         run: corepack enable
 
-      # npm 公開済みの SDK を lockfile で 3.1.0 に固定し、配信物を毎回ソースから再現する。
+      # SDK（ubichill）と CLI（@ubichill/cli）を lockfile で固定し、配信物を毎回ソースから再現する。
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -80,7 +80,6 @@ jobs:
       # Host は作者アカウントの署名（v<版>/lock.sig.json）を確認できた mod だけを実行する（ubichill#87）。
       # 公開済みの過去の版も含めて署名する（ワールドが過去の版を固定していても動くように）。
       # 署名は配布物の中身を変えないので、ワールドの lock はそのまま使える。
-      # ビルドに使う SDK（lockfile で固定）は変えず、署名だけ新しい CLI で行う。
       - name: Sign mod bundle
         env:
           UBICHILL_CREDENTIALS: ${{ secrets.UBICHILL_CREDENTIALS }}
@@ -89,8 +88,8 @@ jobs:
             echo "::error::Secret UBICHILL_CREDENTIALS がありません。'ubichill ci create --name=\"GitHub Actions: ieyoukan/ubichill-videoplayer\"' を実行して設定してください。"
             exit 1
           fi
-          npx --yes ubichill@3.3.0 publish /tmp/gh-pages/video-player
-          npx --yes ubichill@3.3.0 verify --dist-dir=/tmp/gh-pages/video-player --require-signatures
+          pnpm exec ubichill publish /tmp/gh-pages/video-player
+          pnpm exec ubichill verify --dist-dir=/tmp/gh-pages/video-player --require-signatures
 
       - name: Commit and push to gh-pages
         working-directory: /tmp/gh-pages

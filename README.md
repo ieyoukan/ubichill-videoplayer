@@ -67,10 +67,19 @@ v3 からの移行: `video-player:screen` は無くなった。その Entity を
 
 ## 🚀 クイックスタート
 
-### 開発環境
+### mod の開発
 
 ```bash
-cd mods/video-player
+pnpm install
+pnpm dev   # ubichill dev: http://localhost:3333/ で本番と同じ Go と画面で動く。保存すると読み直す
+```
+
+Docker も DB も要らない（Go のインスタンスサーバーは `@ubichill/cli` が npm で入れる）。
+ワールドの中で試すなら `pnpm exec ubichill dev ../ubichill-worlds/worlds/chillwa.yaml`（手元の video-player が使われる）。
+
+### バックエンドの開発環境
+
+```bash
 docker-compose up -d
 ```
 
