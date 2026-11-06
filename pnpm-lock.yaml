@@ -8,12 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@ubichill/cli':
+        specifier: 1.0.1
+        version: 1.0.1
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
       ubichill:
-        specifier: 3.1.0
-        version: 3.1.0
+        specifier: 4.0.0
+        version: 4.0.0
 
 packages:
 
@@ -173,6 +176,36 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@ubichill/cli@1.0.1':
+    resolution: {integrity: sha512-NmVyg8PYWavpoJJ9F6QZMsDqZK7PcyeVrwqwdu4f8zwEowF12lMpy59FQfKS9Oj2VWL28q6q7c0Pm9II+ys3yg==}
+    engines: {node: '>=22'}
+    hasBin: true
+
+  '@ubichill/instance-darwin-arm64@1.0.1':
+    resolution: {integrity: sha512-tTqNah5kZo9LNdAzxojSgDSIlYXOiQX4TAyF2fGjwT8xgjJzVzCGbBX9Rj5Txaj9eYmyvGq5Qa5QLv5ELoN+NQ==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@ubichill/instance-darwin-x64@1.0.1':
+    resolution: {integrity: sha512-wRJFwSeXBaDvg1OCRVIGyJnMKnvgDfEG1tyHfKsfAl3LAkDR+lQd0gNXKsLYVJJlql/p8w817kOOkPRHqPAhBA==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@ubichill/instance-linux-arm64@1.0.1':
+    resolution: {integrity: sha512-L8H9lPF20ZaXqsJai1oQbTcZq9B37DvMK6yXTynakHPrT2BwkIZ0OE3joj3cZF4AYrbBOcZZolYcIyGwFjx7Zw==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@ubichill/instance-linux-x64@1.0.1':
+    resolution: {integrity: sha512-EevbuD4gR0k62U+6PefJPzYEVL/8eaMTAizKJzh8v/kuD0+MpoBqKqmlp3+zz1KENvZoHNRy+4T3pXFQJm595A==}
+    cpu: [x64]
+    os: [linux]
+
+  '@ubichill/instance-win32-x64@1.0.1':
+    resolution: {integrity: sha512-OKMpP9hPF1gg2PCpqb6NpbGkGHCQc+lCZnsm1YBCs/4G8pOba9ih9W3/9SGFUXueJFvsq/V33xHMg/+8yo296A==}
+    cpu: [x64]
+    os: [win32]
+
   esbuild@0.28.1:
     resolution: {integrity: sha512-HrJrvZv5ayxBzPfwphOoNzkzOIIlifzk0KJrGK2c8R4+LKpMtpYLQeUdjnwjWv/LZlkH2laZk+4w78pi99D4Vw==}
     engines: {node: '>=18'}
@@ -183,10 +216,8 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
-  ubichill@3.1.0:
-    resolution: {integrity: sha512-bojmnI3rrumtFSdMltkbHPKOuAV98C2bt9Nvpo2cK33CdsfkZrW8Hx6ZEdjdheetydaGBACCG0Qqz6nOW5Bt2Q==}
-    engines: {node: '>=22'}
-    hasBin: true
+  ubichill@4.0.0:
+    resolution: {integrity: sha512-2APZIAyNeY5YEEUvq+uggpKQG+oeLqSzU/JJi/jR+GCs4LgAsgseZB81V1mAHb7nWzP8S7xAXRilrtXFE6SSPg==}
 
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
@@ -273,6 +304,32 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
+  '@ubichill/cli@1.0.1':
+    dependencies:
+      esbuild: 0.28.1
+      yaml: 2.9.0
+    optionalDependencies:
+      '@ubichill/instance-darwin-arm64': 1.0.1
+      '@ubichill/instance-darwin-x64': 1.0.1
+      '@ubichill/instance-linux-arm64': 1.0.1
+      '@ubichill/instance-linux-x64': 1.0.1
+      '@ubichill/instance-win32-x64': 1.0.1
+
+  '@ubichill/instance-darwin-arm64@1.0.1':
+    optional: true
+
+  '@ubichill/instance-darwin-x64@1.0.1':
+    optional: true
+
+  '@ubichill/instance-linux-arm64@1.0.1':
+    optional: true
+
+  '@ubichill/instance-linux-x64@1.0.1':
+    optional: true
+
+  '@ubichill/instance-win32-x64@1.0.1':
+    optional: true
+
   esbuild@0.28.1:
     optionalDependencies:
       '@esbuild/aix-ppc64': 0.28.1
@@ -304,9 +361,6 @@ snapshots:
 
   typescript@5.9.3: {}
 
-  ubichill@3.1.0:
-    dependencies:
-      esbuild: 0.28.1
-      yaml: 2.9.0
+  ubichill@4.0.0: {}
 
   yaml@2.9.0: {}

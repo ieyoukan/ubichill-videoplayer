@@ -10,13 +10,15 @@
         ".": "./src/index.ts"
     },
     "peerDependencies": {
-        "ubichill": "^3.1.0"
+        "ubichill": "^4.0.0"
     },
     "devDependencies": {
+        "@ubichill/cli": "1.0.1",
         "typescript": "^5.9.0",
-        "ubichill": "3.1.0"
+        "ubichill": "4.0.0"
     },
     "scripts": {
+        "dev": "ubichill dev",
         "typecheck": "tsc --noEmit",
         "build": "pnpm typecheck && pnpm exec ubichill build",
         "verify": "node scripts/verify-dist.mjs",
