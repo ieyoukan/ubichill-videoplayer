@@ -2,20 +2,41 @@
  * video-player:controls Worker — 再生制御の中枢。
  *
  * 再生位置と再生状態は Host の MediaState / Server timeline を正本とする。
- * controls 自身は時計を進めず、UI intent を screen のmedia runtimeへ渡すだけ。
+ * controls 自身は時計を進めず、UI intent を Ubi.media に渡すだけ。
  *
- * Worker 間通信は VPEvents (型付き) のみ。
+ * 動画は参照フィールド `screen` が指す core:media（ワールドに置いた動画面）に描く。
+ * フィールド名 `screen` をそのまま Ubi.media の targetId に使う。
+ * トラックは参照フィールド `playlist` が指すプレイリストに問い合わせる。
  */
 
 import type { ComponentConfig, MediaSource, MediaState } from 'ubichill';
-import { VPEvents, VPTarget } from './events';
+import { VPEvents, VPRoute } from './events';
 
 export const config: ComponentConfig = {
     watchEntityTypes: ['video-player:controls'],
     watchScope: 'entity',
     defaultTransform: { x: 0, y: 370, z: 198, w: 640, h: 60 },
-    capabilities: ['event:emit', 'net:fetch', 'scene:read', 'scene:update', 'ui:render'],
+    capabilities: ['event:emit', 'media:control', 'net:fetch', 'scene:read', 'scene:update', 'ui:render'],
+    dataFields: {
+        screen: {
+            type: 'entityRef',
+            component: 'core:media',
+            required: true,
+            label: 'スクリーン',
+            help: '動画を映す場所（core:media を持つ Entity）',
+        },
+        playlist: {
+            type: 'entityRef',
+            component: 'video-player:playlist',
+            required: true,
+            label: 'プレイリスト',
+            help: '再生するトラックの一覧（video-player:playlist を持つ Entity）',
+        },
+    },
 };
+
+/** 参照フィールド `screen`（core:media）。Ubi.media の targetId。 */
+const SCREEN = 'screen';
 
 import {
     AudioOnlyIcon,
@@ -118,14 +139,9 @@ async function loadCurrentTrack(): Promise<void> {
         ) {
             throw new Error('invalid playback descriptor');
         }
-        VPEvents.emit(
-            'vp:media:load',
-            {
-                source: descriptor.source,
-                presentation: state.local.audioOnly ? 'audio' : 'video',
-            },
-            VPTarget.screen,
-        );
+        const presentation = state.local.audioOnly ? 'audio' : 'video';
+        Ubi.media.setVisible(presentation === 'video', SCREEN);
+        Ubi.media.load({ targetId: SCREEN, source: descriptor.source, presentation, sync: 'shared' });
     } catch (error) {
         if (revision !== loadRequestRevision || state.local.currentTrack?.id !== track.id) return;
         state.batch(() => {
@@ -137,18 +153,19 @@ async function loadCurrentTrack(): Promise<void> {
 
 // ── UI アクション ──────────────────────────────────
 const onSeek = (time: number): void => {
-    VPEvents.emit('vp:media:seek', { time }, VPTarget.screen);
+    Ubi.media.seek(time, SCREEN);
 };
 const onPlayToggle = (): void => {
     const media = state.local.mediaState;
     const playing = isMediaPlaying(media);
-    VPEvents.emit(playing ? 'vp:media:pause' : 'vp:media:play', {}, VPTarget.screen);
+    if (playing) Ubi.media.pause(SCREEN);
+    else Ubi.media.play(SCREEN);
 };
 const onPrev = (): void => {
-    VPEvents.emit('vp:track:prev', {}, VPTarget.playlist);
+    VPEvents.emit('vp:track:prev', {}, VPRoute.playlist);
 };
 const onNext = (): void => {
-    VPEvents.emit('vp:track:next', { loop: state.local.loop, shuffle: state.local.shuffle }, VPTarget.playlist);
+    VPEvents.emit('vp:track:next', { loop: state.local.loop, shuffle: state.local.shuffle }, VPRoute.playlist);
 };
 const onShuffleToggle = (): void => {
     state.local.shuffle = !state.local.shuffle;
@@ -165,9 +182,7 @@ const onAudioOnlyToggle = (): void => {
 
 // ── 副作用のみ。描画は state 読み取りによる自動追跡に任せる ──
 state.onChange('audioOnly', () => void loadCurrentTrack());
-state.onChange('myVolume', (v) => {
-    VPEvents.emit('vp:media:volume', { volume: v }, VPTarget.screen);
-});
+state.onChange('myVolume', (v) => Ubi.media.setVolume(v, SCREEN));
 
 // ── レンダリング（自動追跡: MediaState 通知で再描画） ─────
 export default function ControlsView() {
@@ -426,25 +441,11 @@ VPEvents.on('vp:track:current', ({ track, index, total }) => {
     }
 });
 
-VPEvents.on('vp:media:loaded', ({ duration }) => {
-    state.batch(() => {
-        state.local.isLoading = false;
-        state.local.errorMessage = '';
-    });
-    if (state.local.autoplay && duration >= 0 && state.local.mediaState?.timeline?.revision === 1) {
-        VPEvents.emit('vp:media:play', {}, VPTarget.screen);
-    }
-});
-
-VPEvents.on('vp:media:error', ({ message }) => {
-    state.batch(() => {
-        state.local.isLoading = false;
-        state.local.errorMessage = message || '動画を読み込めませんでした';
-    });
-});
-
 let handledEndedRevision = 0;
-VPEvents.on('vp:media:stateChange', (mediaState) => {
+/** 自動再生を済ませた読み込み（同じ読み込みで二度再生しない）。 */
+let autoplayedLoadId: string | null = null;
+VPEvents.on('media:stateChange', (mediaState) => {
+    if (mediaState.targetId !== SCREEN) return;
     const track = state.local.currentTrack;
     if (track && mediaState.source?.id && mediaState.source.id !== mediaIdFor(track)) return;
     state.batch(() => {
@@ -452,6 +453,17 @@ VPEvents.on('vp:media:stateChange', (mediaState) => {
         state.local.isLoading = mediaState.status === 'loading';
         state.local.errorMessage = mediaState.error?.message ?? '';
     });
+    // 作成時の自動再生: 部屋で最初の読み込み（timeline の revision が 1）が再生できる状態になったときだけ
+    if (
+        state.local.autoplay &&
+        mediaState.status === 'ready' &&
+        mediaState.timeline?.revision === 1 &&
+        mediaState.loadId !== null &&
+        mediaState.loadId !== autoplayedLoadId
+    ) {
+        autoplayedLoadId = mediaState.loadId;
+        Ubi.media.play(SCREEN);
+    }
     const timeline = mediaState.timeline;
     if (
         timeline?.phase === 'ended' &&
@@ -463,20 +475,16 @@ VPEvents.on('vp:media:stateChange', (mediaState) => {
     }
 });
 
-/** @deprecated 終了処理は revision 付き MediaState で一度だけ実行する。 */
-VPEvents.on('vp:media:ended', () => {
-    // Host v2 互換イベント。v3 では上の stateChange が正本。
-});
-
 VPEvents.on('vp:playback:stop', () => {
-    VPEvents.emit('vp:media:pause', {}, VPTarget.screen);
-    VPEvents.emit('vp:media:seek', { time: 0 }, VPTarget.screen);
+    Ubi.media.pause(SCREEN);
+    Ubi.media.seek(0, SCREEN);
 });
 
 VPEvents.on('vp:track:replay', () => {
-    VPEvents.emit('vp:media:seek', { time: 0 }, VPTarget.screen);
-    VPEvents.emit('vp:media:play', {}, VPTarget.screen);
+    Ubi.media.seek(0, SCREEN);
+    Ubi.media.play(SCREEN);
 });
 
-// 起動時に screen へ初期音量を通知 (起動順依存吸収)
-queueMicrotask(() => VPEvents.emit('vp:media:volume', { volume: state.local.myVolume }, VPTarget.screen));
+Ubi.media.setVolume(state.local.myVolume, SCREEN);
+// プレイリストより後に起動したときのために、現トラックを問い合わせる
+VPEvents.emit('vp:track:request', {}, VPRoute.playlist);

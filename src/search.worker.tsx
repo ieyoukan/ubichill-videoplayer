@@ -1,12 +1,12 @@
 /**
  * video-player:search Worker — URL 追加 + YouTube 検索 UI。
  *
- * watchScope='parent' で screen.playlist を読み書きする。
+ * 追加先は参照フィールド `playlist`（ワールド作者が Inspector で指すプレイリスト）。
  * 検索クエリ / 結果 / 入力中フラグはローカル状態。
  */
 
 import type { ComponentConfig } from 'ubichill';
-import { VPEvents, VPTarget } from './events';
+import { VPEvents, VPRoute } from './events';
 import { SearchIcon, VideoIcon } from './icons';
 
 export const config: ComponentConfig = {
@@ -14,6 +14,15 @@ export const config: ComponentConfig = {
     watchScope: 'entity',
     defaultTransform: { x: 330, y: 440, z: 198, w: 310, h: 300 },
     capabilities: ['event:emit', 'net:fetch', 'scene:read', 'ui:render'],
+    dataFields: {
+        playlist: {
+            type: 'entityRef',
+            component: 'video-player:playlist',
+            required: true,
+            label: '追加先のプレイリスト',
+            help: '検索・URL から追加した動画を入れるプレイリスト（video-player:playlist を持つ Entity）',
+        },
+    },
 };
 
 import { formatTime } from './lib/playback';
@@ -34,7 +43,7 @@ const state = Ubi.state.define({
 });
 
 const emitAddTrack = (track: Track): void => {
-    VPEvents.emit('vp:track:add', { track }, VPTarget.playlist);
+    VPEvents.emit('vp:track:add', { track }, VPRoute.playlist);
 };
 
 const apiBase = (): string => state.local.apiBase.trim().replace(/\/$/, '') || DEFAULT_API_BASE;

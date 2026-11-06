@@ -1,57 +1,45 @@
 /**
  * video-player Worker 間通信の単一スキーマ。
  *
- * 全 Worker (controls / screen / playlist / search) が同じ schema を import するので
+ * 全 Worker (controls / playlist / search) が同じ schema を import するので
  * type 文字列の typo と payload 不一致はコンパイル時に弾かれる。
  *
  * `Ubi.event.define()` は呼び出し Worker 内に閉じた registry を作る (handlers は
  * Worker ローカル)。各 Worker が独立にこのモジュールを評価し、各々の Ubi 経由で
  * 新しいインスタンスを得る — シングルトンではない。
  *
- * ルーティングターゲット (VPTarget.*) もここに集約し、Worker 側で散在していた
- * EmitOptions 定数を一元管理する。
+ * 相手は階層ではなく参照フィールドで決める（ワールド作者が Inspector で配線する）:
+ *
+ *   controls.playlist ──vp:track:next/prev──▶ playlist
+ *   search.playlist   ──vp:track:add───────▶ playlist
+ *   playlist ──vp:track:current / replay / stop──▶ 自分を参照している controls・search（referrers）
+ *
+ * 動画は controls が参照する core:media（controls.screen）に、controls 自身の Ubi.media で描く。
  */
 
-import type { EmitOptions, MediaError, MediaMetadata, MediaSource, MediaState } from 'ubichill';
+import type { EmitOptions, MediaState } from 'ubichill';
 
 import type { LoopMode, Track } from './types';
 
 type Empty = Record<string, never>;
 
-/**
- * Worker 間 emit のルーティング先。
- *
- *   controls ──vp:media:*──▶ screen     (再生コマンド)
- *   screen   ──vp:media:*──▶ controls   (DOM <video> 状態通知)
- *   controls ──vp:track:*──▶ playlist   (トラック操作)
- *   search   ──vp:track:add──▶ playlist (新規トラック追加)
- *   playlist ──vp:track:current──▶ siblings (現トラック通知)
- *   playlist ──vp:playback:stop──▶ controls (末尾到達)
- */
-export const VPTarget = {
-    screen: { scope: 'siblings', targetType: 'video-player:screen' },
-    controls: { scope: 'siblings', targetType: 'video-player:controls' },
-    playlist: { scope: 'siblings', targetType: 'video-player:playlist' },
-    siblings: { scope: 'siblings' },
+/** Worker 間 emit の送り先。 */
+export const VPRoute = {
+    /** controls・search の参照フィールド `playlist` が指すプレイリスト。 */
+    playlist: { ref: 'playlist' },
+    /** playlist を参照している controls と search。 */
+    referrers: { scope: 'referrers' },
+    /** playlist を参照している controls だけ。 */
+    controls: { scope: 'referrers', targetType: 'video-player:controls' },
 } as const satisfies Record<string, EmitOptions>;
 
 export const VPEvents = Ubi.event.define<{
-    // ── controls → screen (再生コマンド) ──
-    'vp:media:load': { source: MediaSource; presentation: 'audio' | 'video' };
-    'vp:media:play': Empty;
-    'vp:media:pause': Empty;
-    'vp:media:seek': { time: number };
-    'vp:media:volume': { volume: number };
-    // ── screen → controls (DOM <video> 状態通知) ──
-    'vp:media:loaded': { duration: number };
-    'vp:media:timeUpdate': { currentTime: number; duration: number };
-    'vp:media:ended': Empty;
-    'vp:media:error': { message: string };
-    'vp:media:stateChange': MediaState;
     // ── controls → playlist (トラック操作) ──
     'vp:track:next': { loop: LoopMode; shuffle: boolean };
     'vp:track:prev': Empty;
-    // ── playlist → siblings (現トラック通知) ──
+    // ── controls → playlist (起動時に現トラックを問い合わせる。起動順に依存しないため) ──
+    'vp:track:request': Empty;
+    // ── playlist → 参照している controls・search (現トラック通知) ──
     'vp:track:current': { track: Track | null; index: number; total: number };
     // ── search → playlist (新規トラック追加) ──
     'vp:track:add': { track: Track };
@@ -59,29 +47,6 @@ export const VPEvents = Ubi.event.define<{
     'vp:playback:stop': Empty;
     // ── playlist → controls (同トラック replay: loop='one' or 単一トラック loop='all') ──
     'vp:track:replay': Empty;
-    // ── Ubi.media SDK 由来 (DOM <video> イベント) ──
-    /** @deprecated Host v3 では media:stateChange を使用する。 */
-    'media:loaded': {
-        targetId: string;
-        duration: number;
-        loadId?: string;
-        metadata?: MediaMetadata;
-    };
-    /** @deprecated Host v3 では media:stateChange を使用する。 */
-    'media:timeUpdate': {
-        targetId: string;
-        currentTime: number;
-        duration: number;
-        loadId?: string;
-    };
-    /** @deprecated Host v3 では media:stateChange を使用する。 */
-    'media:ended': { targetId: string; loadId?: string };
-    /** @deprecated Host v3 では media:stateChange を使用する。 */
-    'media:error': {
-        targetId: string;
-        message: string;
-        loadId?: string;
-        error?: MediaError;
-    };
+    // ── Ubi.media 由来 (controls 自身の <video> の状態) ──
     'media:stateChange': MediaState;
 }>();
