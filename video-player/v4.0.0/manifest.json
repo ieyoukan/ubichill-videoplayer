@@ -1,0 +1,93 @@
+{
+  "id": "video-player",
+  "name": "video-player",
+  "version": "4.0.0",
+  "components": {
+    "video-player:controls": {
+      "watchEntityTypes": [
+        "video-player:controls"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 370,
+        "z": 198,
+        "w": 640,
+        "h": 60
+      },
+      "dataFields": {
+        "screen": {
+          "type": "entityRef",
+          "component": "core:media",
+          "required": true,
+          "label": "スクリーン",
+          "help": "動画を映す場所（core:media を持つ Entity）"
+        },
+        "playlist": {
+          "type": "entityRef",
+          "component": "video-player:playlist",
+          "required": true,
+          "label": "プレイリスト",
+          "help": "再生するトラックの一覧（video-player:playlist を持つ Entity）"
+        }
+      },
+      "capabilities": [
+        "event:emit",
+        "media:control",
+        "net:fetch",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./controls/index.d34682de.js"
+    },
+    "video-player:playlist": {
+      "watchEntityTypes": [
+        "video-player:playlist"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "capabilities": [
+        "event:emit",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./playlist/index.f9cb259e.js"
+    },
+    "video-player:search": {
+      "watchEntityTypes": [],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 330,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "dataFields": {
+        "playlist": {
+          "type": "entityRef",
+          "component": "video-player:playlist",
+          "required": true,
+          "label": "追加先のプレイリスト",
+          "help": "検索・URL から追加した動画を入れるプレイリスト（video-player:playlist を持つ Entity）"
+        }
+      },
+      "capabilities": [
+        "event:emit",
+        "net:fetch",
+        "scene:read",
+        "ui:render"
+      ],
+      "workerUrl": "./search/index.93d958de.js"
+    }
+  },
+  "assets": []
+}
