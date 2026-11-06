@@ -10,22 +10,60 @@ Ubichill へのログインや、Ubichill サーバーの発行元登録は不�
 - **URL 非公開**: Google Video の署名 URL を短寿命の opaque token に置換
 - **Server timeline**: 再生・停止・シークを revision 付き Server 時刻で同期
 - **単一 MediaState**: duration、buffering、ended、構造化 error を一つの状態通知で扱う
-- **権限を集約**: controls の `net:fetch` と screen の `media:control` を分離し、同一 backend domain を共有許可
+- **動画面はワールドの `core:media`**: 動画は Host 組み込みの `core:media`（動画を描く場所）に描く。動画を出すだけの Worker は持たない
 - **利用開始トークン必須**: API はサービス自身が発行した短命の JWT を確かめ、接続元 IP ごとに回数を制限する。再生 URL は `/resolve` が発行する短命の署名付き URL のみ
 
 ## 📦 構成
 
 ```text
-controls.worker ── /session → トークン付き Ubi.fetch(/resolve) ──> FastAPI + yt-dlp
-       │                                      │
-       └── typed VPEvents ──> screen.worker   └── opaque media gateway ──> YouTube
-                                  │
-                                  └── Ubi.media.load({ sync: "shared" })
-                                             │
-                                      Host MediaState machine
-                                             │
-                                      Server canonical timeline
+controls ── /session → トークン付き Ubi.fetch(/resolve) ──> FastAPI + yt-dlp
+   │  │                                     │
+   │  └── Ubi.media.load({ targetId: "screen", sync: "shared" })
+   │             │                           └── opaque media gateway ──> YouTube
+   │      参照 screen が指す core:media に <video> を描く
+   │             │
+   │      Host MediaState machine ── Server canonical timeline
+   │
+   └── 参照 playlist ──vp:track:next/prev──> playlist <──vp:track:add── search（参照 playlist）
+                                              │
+                         vp:track:current など（参照している側へ返す: referrers）
 ```
+
+### ワールドへの置き方
+
+相手は**参照フィールド**で指す（World Editor の Inspector で、Hierarchy から Entity をドロップする）。親子・兄弟の形は問わない。
+Unity のように 1 つの Entity に controls・playlist・search を並べてもよい。
+
+| Component | 参照フィールド | 指すもの |
+|---|---|---|
+| `video-player:controls` | `screen`（必須） | `core:media` を持つ Entity（動画を映す場所） |
+| | `playlist`（必須） | `video-player:playlist` を持つ Entity |
+| `video-player:search` | `playlist`（必須） | `video-player:playlist` を持つ Entity |
+| `video-player:playlist` | なし | |
+
+```yaml
+initialEntities:
+  - id: tv
+    transform: { x: 40, y: 40, w: 640, h: 360 }
+    components:
+      - type: core:media
+  - id: player
+    transform: { x: 40, y: 420, w: 640, h: 360 }
+    components:
+      - type: video-player:controls
+        transform: { x: 40, y: 420, w: 640, h: 60 }
+        data: { screen: tv, playlist: player }
+      - type: video-player:playlist
+        transform: { x: 40, y: 500, w: 310, h: 260 }
+      - type: video-player:search
+        transform: { x: 370, y: 500, w: 310, h: 260 }
+        data: { playlist: player }
+```
+
+未設定の参照・型の違う参照は、World Editor（Hierarchy の印・Inspector）と `ubichill dev`（ターミナル）が知らせる。
+
+v3 からの移行: `video-player:screen` は無くなった。その Entity を `core:media` に替え、controls の `screen` でそれを指す。
+空の親 Entity の下に兄弟で並べる決まりも無くなった（参照を設定すれば形はそのままでも動く）。
 
 ## 🚀 クイックスタート
 

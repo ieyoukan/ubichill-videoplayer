@@ -2,11 +2,12 @@
  * video-player:playlist Worker — プレイリストの一意な所有者。
  *
  * 状態: playlist + currentIndex のみ保持 (entity.data)。
- * Worker 間通信は `VPEvents` に閉じた型付き emit/on のみ。
+ * 相手は持たない。controls・search が参照フィールドでこのプレイリストを指し、
+ * 現トラックなどは参照している側（referrers）に返す。
  */
 
 import type { ComponentConfig } from 'ubichill';
-import { VPEvents, VPTarget } from './events';
+import { VPEvents, VPRoute } from './events';
 import { PlaySmallIcon, TrashIcon } from './icons';
 
 export const config: ComponentConfig = {
@@ -36,12 +37,12 @@ const state = Ubi.state.define({
     currentIndex: Ubi.state.sync(0, { editable: false }),
 });
 
-/** 現トラックを siblings に通知。 */
+/** 現トラックを、このプレイリストを参照している controls・search に通知。 */
 function emitCurrent(): void {
     const list = state.local.playlist;
     const idx = state.local.currentIndex;
     const track = list[idx] ?? null;
-    VPEvents.emit('vp:track:current', { track, index: idx, total: list.length }, VPTarget.siblings);
+    VPEvents.emit('vp:track:current', { track, index: idx, total: list.length }, VPRoute.referrers);
 }
 
 function addTrack(track: Track): void {
@@ -68,12 +69,12 @@ function nextTrack(loop: LoopMode, shuffle: boolean): void {
     const len = state.local.playlist.length;
     if (len === 0) return;
     if (loop === 'one') {
-        VPEvents.emit('vp:track:replay', {}, VPTarget.controls);
+        VPEvents.emit('vp:track:replay', {}, VPRoute.controls);
         return;
     }
     if (shuffle) {
         if (len === 1) {
-            VPEvents.emit('vp:track:replay', {}, VPTarget.controls);
+            VPEvents.emit('vp:track:replay', {}, VPRoute.controls);
             return;
         }
         state.local.currentIndex = Math.floor(Math.random() * len);
@@ -86,12 +87,12 @@ function nextTrack(loop: LoopMode, shuffle: boolean): void {
     }
     if (loop === 'all') {
         if (len === 1) {
-            VPEvents.emit('vp:track:replay', {}, VPTarget.controls);
+            VPEvents.emit('vp:track:replay', {}, VPRoute.controls);
         } else {
             state.local.currentIndex = 0;
         }
     } else {
-        VPEvents.emit('vp:playback:stop', {}, VPTarget.controls);
+        VPEvents.emit('vp:playback:stop', {}, VPRoute.controls);
     }
 }
 
@@ -233,6 +234,7 @@ export default function PlaylistView() {
 VPEvents.on('vp:track:add', ({ track }) => addTrack(track));
 VPEvents.on('vp:track:next', ({ loop, shuffle }) => nextTrack(loop, shuffle));
 VPEvents.on('vp:track:prev', () => prevTrack());
+VPEvents.on('vp:track:request', () => emitCurrent());
 
-// 起動時に siblings に通知 (siblings の起動順に依存しないよう少し遅延)
+// 起動時にも通知する（controls が先に起動していた場合。後から起動した controls は vp:track:request で問い合わせる）
 queueMicrotask(emitCurrent);
