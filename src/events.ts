@@ -17,7 +17,7 @@
  * 動画は controls が参照する core:media（controls.screen）に、controls 自身の Ubi.media で描く。
  */
 
-import type { EmitOptions, MediaState } from 'ubichill';
+import type { EmitOptions, MediaState, RefEmitOptions } from 'ubichill';
 
 import type { LoopMode, Track } from './types';
 
@@ -31,7 +31,7 @@ export const VPRoute = {
     referrers: { scope: 'referrers' },
     /** playlist を参照している controls だけ。 */
     controls: { scope: 'referrers', targetType: 'video-player:controls' },
-} as const satisfies Record<string, EmitOptions>;
+} as const satisfies Record<string, EmitOptions | RefEmitOptions>;
 
 export const VPEvents = Ubi.event.define<{
     // ── controls → playlist (トラック操作) ──
