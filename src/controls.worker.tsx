@@ -13,6 +13,7 @@ import type { ComponentConfig, MediaSource, MediaState } from 'ubichill';
 import { VPEvents, VPRoute } from './events';
 
 export const config: ComponentConfig = {
+    thumbnail: 'previews/controls.svg',
     watchEntityTypes: ['video-player:controls'],
     watchScope: 'entity',
     defaultTransform: { x: 0, y: 370, z: 198, w: 640, h: 60 },

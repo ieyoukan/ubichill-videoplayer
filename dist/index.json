@@ -2,13 +2,21 @@
   {
     "id": "video-player",
     "name": "video-player",
-    "version": "4.0.0",
+    "version": "4.1.0",
     "components": [
       "video-player:controls",
       "video-player:playlist",
       "video-player:search"
     ],
     "versions": [
+      {
+        "version": "4.1.0",
+        "components": [
+          "video-player:controls",
+          "video-player:playlist",
+          "video-player:search"
+        ]
+      },
       {
         "version": "4.0.0",
         "components": [
