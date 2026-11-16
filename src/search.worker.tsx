@@ -10,6 +10,7 @@ import { VPEvents, VPRoute } from './events';
 import { SearchIcon, VideoIcon } from './icons';
 
 export const config: ComponentConfig = {
+    thumbnail: 'previews/search.svg',
     watchEntityTypes: [],
     watchScope: 'entity',
     defaultTransform: { x: 330, y: 440, z: 198, w: 310, h: 300 },

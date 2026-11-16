@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'src/**'
+      - 'assets/**'
+      - 'prefabs/**'
       - 'dist/**'
       - 'scripts/verify-dist.mjs'
       - 'package.json'
@@ -105,3 +107,19 @@ jobs:
             git push origin HEAD:gh-pages --force
             echo "✅ Mod published to GitHub Pages"
           fi
+
+      # 署名だけでは作者のユーザーページと mod の検索は変わらない。Pages に出たのを確かめてから登録する
+      # （反映を待つため、確かめられるまで繰り返す）。
+      - name: Register mod in the catalog
+        env:
+          UBICHILL_CREDENTIALS: ${{ secrets.UBICHILL_CREDENTIALS }}
+        run: |
+          for attempt in $(seq 1 20); do
+            if pnpm exec ubichill publish /tmp/gh-pages/video-player --public-url=https://ieyoukan.github.io/ubichill-videoplayer --check-public; then
+              exit 0
+            fi
+            echo "Pages への反映を待っています（${attempt}/20）"
+            sleep 30
+          done
+          echo "::error::公開先で mod を確かめられなかったので、カタログに登録していません"
+          exit 1

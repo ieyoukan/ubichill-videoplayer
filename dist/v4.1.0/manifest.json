@@ -1,0 +1,207 @@
+{
+  "id": "video-player",
+  "name": "video-player",
+  "version": "4.1.0",
+  "components": {
+    "video-player:controls": {
+      "thumbnail": "previews/controls.svg",
+      "watchEntityTypes": [
+        "video-player:controls"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 370,
+        "z": 198,
+        "w": 640,
+        "h": 60
+      },
+      "dataFields": {
+        "screen": {
+          "type": "entityRef",
+          "component": "core:media",
+          "required": true,
+          "label": "スクリーン",
+          "help": "動画を映す場所（core:media を持つ Entity）"
+        },
+        "playlist": {
+          "type": "entityRef",
+          "component": "video-player:playlist",
+          "required": true,
+          "label": "プレイリスト",
+          "help": "再生するトラックの一覧（video-player:playlist を持つ Entity）"
+        }
+      },
+      "capabilities": [
+        "event:emit",
+        "media:control",
+        "net:fetch",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./controls/index.691834b6.js"
+    },
+    "video-player:playlist": {
+      "thumbnail": "previews/playlist.svg",
+      "watchEntityTypes": [
+        "video-player:playlist"
+      ],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 0,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "capabilities": [
+        "event:emit",
+        "scene:read",
+        "scene:update",
+        "ui:render"
+      ],
+      "workerUrl": "./playlist/index.e2bebc62.js"
+    },
+    "video-player:search": {
+      "thumbnail": "previews/search.svg",
+      "watchEntityTypes": [],
+      "watchScope": "entity",
+      "defaultTransform": {
+        "x": 330,
+        "y": 440,
+        "z": 198,
+        "w": 310,
+        "h": 300
+      },
+      "dataFields": {
+        "playlist": {
+          "type": "entityRef",
+          "component": "video-player:playlist",
+          "required": true,
+          "label": "追加先のプレイリスト",
+          "help": "検索・URL から追加した動画を入れるプレイリスト（video-player:playlist を持つ Entity）"
+        }
+      },
+      "capabilities": [
+        "event:emit",
+        "net:fetch",
+        "scene:read",
+        "ui:render"
+      ],
+      "workerUrl": "./search/index.4f7628fc.js"
+    }
+  },
+  "prefabs": {
+    "player-set": {
+      "name": "動画プレイヤー",
+      "description": "動画を映すスクリーン（core:media）と、操作バー・プレイリスト・検索のセット。参照はつないであるので、置けばそのまま検索して再生できる。",
+      "thumbnail": "previews/player-set.svg",
+      "entities": [
+        {
+          "id": "screen",
+          "transform": {
+            "x": 0,
+            "y": 0,
+            "z": 2,
+            "w": 960,
+            "h": 540,
+            "scale": 1,
+            "rotation": 0
+          },
+          "components": [
+            {
+              "type": "core:media",
+              "data": {
+                "fit": "contain"
+              }
+            }
+          ],
+          "tags": [],
+          "children": []
+        },
+        {
+          "id": "controls",
+          "transform": {
+            "x": 0,
+            "y": 556,
+            "z": 200,
+            "w": 960,
+            "h": 80,
+            "scale": 1,
+            "rotation": 0
+          },
+          "components": [
+            {
+              "type": "video-player:controls",
+              "data": {
+                "screen": "screen",
+                "playlist": "playlist"
+              }
+            }
+          ],
+          "tags": [],
+          "children": []
+        },
+        {
+          "id": "playlist",
+          "transform": {
+            "x": 980,
+            "y": 0,
+            "z": 1,
+            "w": 320,
+            "h": 636,
+            "scale": 1,
+            "rotation": 0
+          },
+          "components": [
+            {
+              "type": "video-player:playlist",
+              "data": {}
+            }
+          ],
+          "tags": [],
+          "children": []
+        },
+        {
+          "id": "search",
+          "transform": {
+            "x": 1316,
+            "y": 0,
+            "z": 1,
+            "w": 360,
+            "h": 636,
+            "scale": 1,
+            "rotation": 0
+          },
+          "components": [
+            {
+              "type": "video-player:search",
+              "data": {
+                "playlist": "playlist"
+              }
+            }
+          ],
+          "tags": [],
+          "children": []
+        }
+      ]
+    }
+  },
+  "thumbnail": "previews/thumbnail.svg",
+  "description": "YouTube の動画・ライブ・音声を、部屋のみんなで同じ位置で再生します。動画はワールドの core:media に映します。スクリーン・操作バー・プレイリスト・検索をつないだプレハブで、まとめて置けます。",
+  "assets": [
+    "previews/controls.svg",
+    "previews/player-set.svg",
+    "previews/playlist.svg",
+    "previews/search.svg",
+    "previews/thumbnail.svg"
+  ],
+  "assetIntegrity": {
+    "previews/controls.svg": "sha256-VWP+EXhdApnbU3qYu+f3pGePxKiZ2AMjafEKDhy4brI=",
+    "previews/player-set.svg": "sha256-MnLshO5zCFGJY9obvQTYUKrFehrwgb5Cr7j49EBMeP8=",
+    "previews/playlist.svg": "sha256-NyA0jIvtz9XyXFo65Bw0BdpOdRhnNBTDLqzQBPDiZ1Q=",
+    "previews/search.svg": "sha256-PN8HcECTliyYGKobtZWN8k+VyZ9oFa+OEVUkfzu0fmo=",
+    "previews/thumbnail.svg": "sha256-moGwGvX7qTIV10iJhovX7L2AxkfAhajxnEEd5rkUXXw="
+  }
+}

@@ -31,7 +31,15 @@ controls ── /session → トークン付き Ubi.fetch(/resolve) ──> Fast
 
 ### ワールドへの置き方
 
-相手は**参照フィールド**で指す（World Editor の Inspector で、Hierarchy から Entity をドロップする）。親子・兄弟の形は問わない。
+いちばん簡単なのは、プレハブ「動画プレイヤー」（`prefabs/player-set.json`）を置くこと。World Editor のアセット欄から置くと、
+スクリーン（`core:media`）・操作バー・プレイリスト・検索が、参照をつないだ状態で入る。CLI なら次のとおり。
+
+```sh
+ubichill install @youkan@ubichill.com/video-player --world=world.yaml
+ubichill prefab add video-player/player-set --world=world.yaml
+```
+
+自分で組むときは、相手を**参照フィールド**で指す（World Editor の Inspector で、Hierarchy から Entity をドロップする）。親子・兄弟の形は問わない。
 Unity のように 1 つの Entity に controls・playlist・search を並べてもよい。
 
 | Component | 参照フィールド | 指すもの |

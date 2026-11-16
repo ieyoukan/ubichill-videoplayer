@@ -1,0 +1,35 @@
+{
+    "name": "動画プレイヤー",
+    "description": "動画を映すスクリーン（core:media）と、操作バー・プレイリスト・検索のセット。参照はつないであるので、置けばそのまま検索して再生できる。",
+    "thumbnail": "previews/player-set.svg",
+    "entities": [
+        {
+            "id": "screen",
+            "transform": { "x": 0, "y": 0, "z": 2, "w": 960, "h": 540, "scale": 1, "rotation": 0 },
+            "components": [{ "type": "core:media", "data": { "fit": "contain" } }],
+            "tags": [],
+            "children": []
+        },
+        {
+            "id": "controls",
+            "transform": { "x": 0, "y": 556, "z": 200, "w": 960, "h": 80, "scale": 1, "rotation": 0 },
+            "components": [{ "type": "video-player:controls", "data": { "screen": "screen", "playlist": "playlist" } }],
+            "tags": [],
+            "children": []
+        },
+        {
+            "id": "playlist",
+            "transform": { "x": 980, "y": 0, "z": 1, "w": 320, "h": 636, "scale": 1, "rotation": 0 },
+            "components": [{ "type": "video-player:playlist", "data": {} }],
+            "tags": [],
+            "children": []
+        },
+        {
+            "id": "search",
+            "transform": { "x": 1316, "y": 0, "z": 1, "w": 360, "h": 636, "scale": 1, "rotation": 0 },
+            "components": [{ "type": "video-player:search", "data": { "playlist": "playlist" } }],
+            "tags": [],
+            "children": []
+        }
+    ]
+}

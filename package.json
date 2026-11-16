@@ -1,8 +1,12 @@
 {
     "name": "@ubichill/video-player",
-    "version": "4.0.0",
+    "version": "4.1.0",
     "private": true,
     "homepage": "https://ieyoukan.github.io/ubichill-videoplayer",
+    "ubichill": {
+        "description": "YouTube の動画・ライブ・音声を、部屋のみんなで同じ位置で再生します。動画はワールドの core:media に映します。スクリーン・操作バー・プレイリスト・検索をつないだプレハブで、まとめて置けます。",
+        "thumbnail": "previews/thumbnail.svg"
+    },
     "packageManager": "pnpm@10.33.2",
     "main": "src/index.ts",
     "types": "src/index.ts",
@@ -10,12 +14,12 @@
         ".": "./src/index.ts"
     },
     "peerDependencies": {
-        "ubichill": "^4.1.0"
+        "ubichill": "^4.1.5"
     },
     "devDependencies": {
-        "@ubichill/cli": "1.1.0",
+        "@ubichill/cli": "1.4.0",
         "typescript": "^5.9.0",
-        "ubichill": "4.1.0"
+        "ubichill": "4.1.5"
     },
     "scripts": {
         "dev": "ubichill dev",
