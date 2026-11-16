@@ -1,0 +1,12 @@
+{
+  "format": "ubichill-signature",
+  "version": 2,
+  "kind": "mod",
+  "alg": "ed25519",
+  "publicKey": "RV6x-UsjPIm4bS9tsJm7Hmsmbk4dCJeQRVjql7903Gs",
+  "author": "youkan@ubichill.com",
+  "subject": "video-player",
+  "subjectVersion": "4.1.0",
+  "contentHash": "sha256-f6oeqXFOhZN/5fnqGbP6wAc8Ipro0V4TMiUojB/8yqc=",
+  "signature": "ViCtXGO3BFMtRFy96RFbim2SW6p6eV_wfbcmN4LtXJXGQVg1VP0TAGvBnAl86eIFIoZtR8erju3UOyUvpZpUCA"
+}
